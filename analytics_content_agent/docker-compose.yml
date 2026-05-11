@@ -1,0 +1,39 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist workspace and outputs across restarts
+      - ./workspace:/app/workspace
+      - ./outputs:/app/outputs
+      # Mount skills so agent can read them at runtime
+      - ./skills:/app/skills
+      # Mount Docker socket so handle_bash can run the claude-sandbox container
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file: .env
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ── Quick-start ───────────────────────────────────────────────────────────────
+# 1. Build the bash sandbox image (only needed once):
+#      docker build -f Dockerfile.sandbox -t claude-sandbox .
+#
+# 2. Start backend + frontend:
+#      docker compose up --build
+#
+# URLs:
+#   Frontend  →  http://localhost:3000
+#   Backend   →  http://localhost:8000/docs
