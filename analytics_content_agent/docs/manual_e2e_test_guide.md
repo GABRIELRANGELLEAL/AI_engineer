@@ -11,13 +11,18 @@
 cd c:\Users\Leal\AI_Projects\analytics_content_agent
 docker compose up --build
 ```
+Voce tmb tem a opção de rodar localmente sem precisar subir a imagem do docker utilizando 
 
-Aguarde até ver as duas linhas de saída abaixo antes de prosseguir:
+```powershell
+conda activate ia_projeto
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+para rodar o front local, rode em outro terminal:
+```powershell
+cd frontend
+npm run dev
+```
 
-```
-backend-1   | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-frontend-1  | ...nginx started
-```
 
 | Serviço  | URL                          |
 |----------|------------------------------|

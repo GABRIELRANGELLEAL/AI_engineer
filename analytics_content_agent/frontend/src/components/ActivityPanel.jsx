@@ -3,7 +3,7 @@ import { useState } from 'react'
 function ActivityItem({ item }) {
   const [open, setOpen] = useState(false)
 
-  const icon = { aprovado: '✅', negado: '❌', waiting: '⏳' }[item.status] ?? '•'
+  const icon = { aprovado: '✅', negado: '❌', waiting: '⏳', erro: '⚠️' }[item.status] ?? '•'
 
   return (
     <li className="activity-item">

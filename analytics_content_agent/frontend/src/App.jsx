@@ -57,7 +57,11 @@ export default function App() {
 
         case 'tool_result':
           setActivityLog(prev =>
-            prev.map(t => t.id === event.id ? { ...t, status: 'aprovado' } : t)
+            prev.map(t =>
+              t.id === event.id
+                ? { ...t, status: event.error ? 'erro' : 'aprovado' }
+                : t
+            )
           )
           setPendingTool(null)
           pendingIdRef.current = null

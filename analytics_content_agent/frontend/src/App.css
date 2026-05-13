@@ -305,6 +305,7 @@
 .status-badge.aprovado { background: rgba(34,197,94,0.15); color: var(--success); }
 .status-badge.negado   { background: rgba(239,68,68,0.12); color: var(--danger); }
 .status-badge.waiting  { background: rgba(250,204,21,0.15); color: #facc15; }
+.status-badge.erro    { background: rgba(249,115,22,0.15); color: #fb923c; }
 
 .activity-item-body {
   padding: 0.5rem 0.7rem 0.6rem;

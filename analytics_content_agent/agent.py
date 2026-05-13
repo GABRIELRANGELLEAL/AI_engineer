@@ -28,6 +28,14 @@ OUTPUTS.mkdir(exist_ok=True)
 # Inicializa o cliente da Anthropic com a chave de API do ambiente
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+# System padrão quando nenhuma skill é injetada (skills substituem este texto por completo).
+GENERIC_SYSTEM = (
+    "Você é um assistente que pode usar ferramentas de filesystem e execução de código. "
+    "Em `view`, `create_file`, `str_replace` e no diretório de trabalho do `bash`, os caminhos "
+    "são relativos à raiz do workspace: é onde ficam os ficheiros enviados pelo utilizador "
+    "(por exemplo CSV) após upload."
+)
+
 # ─── Tools (equivalentes ao sandbox do Claude.ai) ────────────────────────────
 # Define as ferramentas disponíveis para o Claude usar durante a conversa
 # Cada tool é um dicionário com name, description e input_schema
@@ -99,22 +107,29 @@ def handle_bash(command: str, **_) -> str:
     - Limite de CPU (1 core)
     - Timeout de 60 segundos
     """
-    result = subprocess.run(
-        [
-            "docker", "run", "--rm",                      # Remove container após execução
-            "--network", "none",                          # Sem acesso à internet (segurança)
-            "--memory", "512m",                           # Limite de RAM
-            "--cpus", "1",                                # Limite de CPU
-            "-v", f"{WORKSPACE}:/home/sandbox/workspace", # Monta workspace local no container
-            "-v", f"{OUTPUTS}:/home/sandbox/outputs",     # Monta pasta de outputs
-            "-w", "/home/sandbox/workspace",              # Define diretório de trabalho
-            "claude-sandbox",                             # Nome da imagem Docker
-            "bash", "-c", command                         # Comando a executar
-        ],
-        capture_output=True,  # Captura stdout e stderr
-        text=True,            # Retorna strings ao invés de bytes
-        timeout=60            # Timeout de 60 segundos
-    )
+    try:
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",                      # Remove container após execução
+                "--network", "none",                          # Sem acesso à internet (segurança)
+                "--memory", "512m",                           # Limite de RAM
+                "--cpus", "1",                                # Limite de CPU
+                "-v", f"{WORKSPACE}:/home/sandbox/workspace", # Monta workspace local no container
+                "-v", f"{OUTPUTS}:/home/sandbox/outputs",     # Monta pasta de outputs
+                "-w", "/home/sandbox/workspace",              # Define diretório de trabalho
+                "claude-sandbox",                             # Nome da imagem Docker
+                "bash", "-c", command                         # Comando a executar
+            ],
+            capture_output=True,  # Captura stdout e stderr
+            text=True,            # Retorna strings ao invés de bytes
+            timeout=60            # Timeout de 60 segundos
+        )
+    except FileNotFoundError:
+        return (
+            "[bash tool] O executável `docker` não foi encontrado no PATH deste sistema. "
+            "No Windows, instale o Docker Desktop e confirme que `docker` funciona no terminal. "
+            "Para ler o CSV sem o sandbox, use a ferramenta `view` no caminho relativo do ficheiro."
+        )
     # Combina stdout e stderr no resultado
     output = result.stdout
     if result.stderr:
@@ -348,11 +363,11 @@ def agent_turn(
         (text_blocks, tool_blocks) — listas de blocos do tipo `text` e `tool_use`
     """
     response = client.messages.create(
-        model=model_name,
-        max_tokens=8096,
-        system=system or "Você é um assistente que pode usar ferramentas de filesystem e execução de código.",
-        tools=TOOLS,
-        messages=messages,
+        model=model_name,                  # Modelo recebido como parâmetro
+        max_tokens=8096,                   # Limite de tokens na resposta
+        system=system or GENERIC_SYSTEM,
+        tools=TOOLS,                       # Lista de tools disponíveis
+        messages=messages,                 # Histórico completo da conversa
     )
     text_blocks = [b for b in response.content if b.type == "text"]
     tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -381,6 +396,7 @@ def run_agent(prompt: str, skills: list[str] | None = None, verbose: bool = Fals
     """
     # ── Etapa 1: seleção de skills ────────────────────────────────────────────
     if skills is None:
+        print("selecting the ideal skill to execute resolve your task")
         # Seleção automática: lê só os cabeçalhos e deixa o LLM leve decidir
         catalog = _build_skills_catalog()
         skills  = _select_skills(prompt, catalog, model_name=model_name)
@@ -390,6 +406,7 @@ def run_agent(prompt: str, skills: list[str] | None = None, verbose: bool = Fals
         print(f"\n[Skills forçadas pelo usuário: {skills}]\n")
 
     # ── Etapa 2: carrega conteúdo completo apenas das skills escolhidas ───────
+    print("loading the content of the selected skills")
     system = load_skills(skills) if skills else ""
     if verbose and system:
         print(f"\n[Conteúdo carregado para: {skills}]\n")
@@ -399,11 +416,12 @@ def run_agent(prompt: str, skills: list[str] | None = None, verbose: bool = Fals
 
     # Loop principal: continua até o Claude não solicitar mais tools
     while True:
+        print("sending the message to the Claude")
         # Envia mensagem para o Claude com todo o contexto
         response = client.messages.create(
             model=model_name,                  # Modelo recebido como parâmetro
             max_tokens=8096,                   # Limite de tokens na resposta
-            system=system or "Você é um assistente que pode usar ferramentas de filesystem e execução de código.",
+            system=system or GENERIC_SYSTEM,
             tools=TOOLS,                       # Lista de tools disponíveis
             messages=messages,                 # Histórico completo da conversa
         )
