@@ -65,8 +65,8 @@ export default function FileUploadZone({ onFilesUploaded, uploadedFiles, onRemov
         onDrop={handleDrop}
         className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
           isDragging
-            ? 'border-blue-500 bg-blue-50'
-            : 'border-slate-300 hover:border-slate-400'
+            ? 'border-blue-500 bg-blue-900/30'
+            : 'border-slate-700 bg-slate-800 hover:border-blue-500'
         }`}
       >
         <input
@@ -80,14 +80,14 @@ export default function FileUploadZone({ onFilesUploaded, uploadedFiles, onRemov
         
         {uploading ? (
           <div className="flex flex-col items-center gap-2">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-            <p className="text-sm text-slate-600">Uploading files...</p>
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+            <p className="text-sm text-slate-300">Uploading files...</p>
           </div>
         ) : (
           <>
-            <Upload className="w-10 h-10 mx-auto mb-3 text-slate-400" />
-            <p className="text-sm text-slate-600 mb-1">
-              <span className="font-medium text-blue-600">Click to upload</span> or drag and drop
+            <Upload className="w-10 h-10 mx-auto mb-3 text-slate-500" />
+            <p className="text-sm text-slate-300 mb-1">
+              <span className="font-medium text-blue-400">Click to upload</span> or drag and drop
             </p>
             <p className="text-xs text-slate-500">CSV files only (max 50MB per file)</p>
           </>
@@ -96,7 +96,7 @@ export default function FileUploadZone({ onFilesUploaded, uploadedFiles, onRemov
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm">
+        <div className="bg-red-900/30 text-red-400 px-4 py-2 rounded-lg text-sm border border-red-800">
           {error}
         </div>
       )}
@@ -104,26 +104,26 @@ export default function FileUploadZone({ onFilesUploaded, uploadedFiles, onRemov
       {/* Uploaded Files List */}
       {uploadedFiles.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
             Uploaded Files ({uploadedFiles.length})
           </div>
           {uploadedFiles.map((file) => (
             <div
               key={file.path}
-              className="flex items-center justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg"
+              className="flex items-center justify-between gap-3 p-3 bg-slate-800 border border-slate-700 rounded-lg"
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                <span className="text-sm text-slate-700 truncate" title={file.name}>
+                <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <span className="text-sm text-slate-200 truncate" title={file.name}>
                   {file.name}
                 </span>
               </div>
               <button
                 onClick={() => onRemoveFile(file.path)}
-                className="p-1 hover:bg-slate-100 rounded transition"
+                className="p-1 hover:bg-slate-700 rounded transition"
                 title="Remove file"
               >
-                <X className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                <X className="w-4 h-4 text-slate-400 hover:text-red-400" />
               </button>
             </div>
           ))}

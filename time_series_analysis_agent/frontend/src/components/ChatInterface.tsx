@@ -141,14 +141,14 @@ export default function ChatInterface({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-slate-900">
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center text-slate-400">
+            <div className="text-center text-slate-500">
               <Bot className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg mb-2">
+              <p className="text-lg mb-2 text-slate-300">
                 {dataSourceType === 'csv' && uploadedFiles.length === 0
                   ? 'Upload CSV files to get started'
                   : 'Start a conversation with the planner agent'}
@@ -179,11 +179,11 @@ export default function ChatInterface({
               className={`max-w-[70%] rounded-2xl px-4 py-3 ${
                 message.role === 'user'
                   ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-800'
+                  : 'bg-slate-800 text-slate-200 border border-slate-700'
               }`}
             >
               {message.role === 'assistant' ? (
-                <div className="prose prose-sm max-w-none prose-slate">
+                <div className="prose prose-sm max-w-none prose-invert">
                   <ReactMarkdown>{message.content}</ReactMarkdown>
                 </div>
               ) : (
@@ -191,7 +191,7 @@ export default function ChatInterface({
               )}
               <div
                 className={`text-xs mt-2 ${
-                  message.role === 'user' ? 'text-blue-100' : 'text-slate-400'
+                  message.role === 'user' ? 'text-blue-100' : 'text-slate-500'
                 }`}
               >
                 {message.timestamp.toLocaleTimeString()}
@@ -199,7 +199,7 @@ export default function ChatInterface({
             </div>
 
             {message.role === 'user' && (
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
                 <User className="w-5 h-5 text-white" />
               </div>
             )}
@@ -211,7 +211,7 @@ export default function ChatInterface({
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
               <Bot className="w-5 h-5 text-white" />
             </div>
-            <div className="bg-slate-100 rounded-2xl px-4 py-3">
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3">
               <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />
             </div>
           </div>
@@ -223,14 +223,14 @@ export default function ChatInterface({
       {/* Error Message */}
       {error && (
         <div className="px-6 py-2">
-          <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm">
+          <div className="bg-red-900/30 text-red-400 px-4 py-2 rounded-lg text-sm border border-red-800">
             {error}
           </div>
         </div>
       )}
 
       {/* Input Area */}
-      <div className="border-t border-slate-200 p-4 bg-white">
+      <div className="border-t border-slate-800 p-4 bg-slate-900">
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -242,7 +242,7 @@ export default function ChatInterface({
                 : 'Type your message... (Press Enter to send, Shift+Enter for new line)'
             }
             rows={2}
-            className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+            className="flex-1 px-4 py-3 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
             disabled={loading || (dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0)}
           />
           <button

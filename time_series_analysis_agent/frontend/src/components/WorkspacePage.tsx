@@ -77,7 +77,7 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
         <div className="flex-1 flex flex-col border-r border-slate-800 bg-slate-900">
           {/* File Upload Zone (CSV only, shown before task created) */}
           {dataSourceType === 'csv' && !taskId && (
-            <div className="p-4 border-b border-slate-200 bg-slate-50">
+            <div className="p-4 border-b border-slate-800 bg-slate-900">
               <FileUploadZone
                 onFilesUploaded={handleFilesUploaded}
                 uploadedFiles={uploadedFiles}
@@ -88,8 +88,8 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
 
           {/* Uploaded Files Summary (CSV only, after task created) */}
           {dataSourceType === 'csv' && taskId && uploadedFiles.length > 0 && (
-            <div className="p-3 border-b border-slate-200 bg-blue-50">
-              <div className="flex items-center gap-2 text-sm text-blue-700">
+            <div className="p-3 border-b border-slate-800 bg-blue-900/30">
+              <div className="flex items-center gap-2 text-sm text-blue-300">
                 <Upload className="w-4 h-4" />
                 <span className="font-medium">
                   {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''} uploaded
@@ -100,10 +100,10 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
 
           {/* Database Placeholder */}
           {dataSourceType === 'database' && !taskId && (
-            <div className="p-6 border-b border-slate-200 bg-slate-50">
+            <div className="p-6 border-b border-slate-800 bg-slate-900">
               <div className="text-center py-8">
-                <div className="text-slate-500 mb-2">Database connection</div>
-                <div className="text-sm text-slate-400">
+                <div className="text-slate-300 mb-2">Database connection</div>
+                <div className="text-sm text-slate-500">
                   Coming soon - database integration is under development
                 </div>
               </div>
