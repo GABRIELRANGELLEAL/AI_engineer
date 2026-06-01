@@ -1,5 +1,22 @@
 services:
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: analytics
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -15,6 +32,11 @@ services:
       # Mount Docker socket so handle_bash can run the claude-sandbox container
       - /var/run/docker.sock:/var/run/docker.sock
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/analytics
+    depends_on:
+      postgres:
+        condition: service_healthy
     # For testing GET /session/.../stream from Swagger: tool calls need POST .../authorize
     # unless you set AUTO_APPROVE_TOOLS=true in .env
     restart: unless-stopped
@@ -29,13 +51,19 @@ services:
       - backend
     restart: unless-stopped
 
+volumes:
+  pgdata:
+
 # ── Quick-start ───────────────────────────────────────────────────────────────
-# 1. Build the bash sandbox image (only needed once):
+# 1. Build the bash sandbox image (needed once):
 #      docker build -f Dockerfile.sandbox -t claude-sandbox .
 #
-# 2. Start backend + frontend:
+# 2. Start Postgres + backend + frontend:
 #      docker compose up --build
 #
 # URLs:
 #   Frontend  →  http://localhost:3000
 #   Backend   →  http://localhost:8000/docs
+#
+# Local API without Docker: set DATABASE_URL in .env, e.g.
+#   postgresql://app:app@localhost:5432/analytics
