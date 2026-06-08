@@ -22,17 +22,13 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict
 from sqlalchemy.orm import Session
 
+from models import Task, LlmInteraction
 from .executor_context_builder import build_context, ExecutionContextPackage
 from .executor_code_generator import generate_code, CodeGenerationResult
-from .executor_code_runner import run_code, CodeRunResult
+from .executor_code_runner import run_code, CodeRunResult, _resolve_ui_json_path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_DIR = BASE_DIR / "workspace"
-
-
-# Forward declaration - will be imported inside function to avoid circular import
-Task = None
-LlmInteraction = None
 
 
 @dataclass
@@ -119,11 +115,11 @@ def _gather_all_artifacts(task_id: str, current_step: int) -> Dict[int, List[str
 
 def _extract_summary_from_ui_json(ui_json_path: Path) -> str:
     """
-    Extract summary text from ui.json for collapsed card view.
+    Extract summary text from {output_name}_ui.json for collapsed card view.
     Uses first text block or falls back to title.
     
     Args:
-        ui_json_path: Path to ui.json file
+        ui_json_path: Path to UI output file (*_ui.json)
         
     Returns:
         Summary string (max 200 chars)
@@ -263,27 +259,36 @@ def _execute_card_step(
             output_tokens=0,
         )
     
-    # 2. Generate code
+    # 2. Generate code (retry once on validation/LLM failure)
     print(f"[EXECUTOR] Generating code for step {step_number}...")
     gen_result = generate_code(context, previous_error=None)
-    
+    total_input_tokens = gen_result.input_tokens
+    total_output_tokens = gen_result.output_tokens
+
     if not gen_result.success:
         print(f"[ERROR] Code generation failed: {gen_result.error}")
-        
-        return StepExecutionResult(
-            task_id=task_id,
-            step_number=step_number,
-            total_steps=total_steps,
-            step_description=description,
-            status="error",
-            summary=f"Code generation failed: {gen_result.error}",
-            generated_files=[],
-            all_artifacts=all_artifacts,
-            next_step_ready=False,
-            tool_uses_count=0,
-            input_tokens=gen_result.input_tokens,
-            output_tokens=gen_result.output_tokens,
-        )
+        print(f"[EXECUTOR] Retrying code generation with error feedback...")
+        gen_result_retry = generate_code(context, previous_error=gen_result.error)
+        total_input_tokens += gen_result_retry.input_tokens
+        total_output_tokens += gen_result_retry.output_tokens
+        if gen_result_retry.success:
+            gen_result = gen_result_retry
+        else:
+            print(f"[ERROR] Retry code generation also failed: {gen_result_retry.error}")
+            return StepExecutionResult(
+                task_id=task_id,
+                step_number=step_number,
+                total_steps=total_steps,
+                step_description=description,
+                status="error",
+                summary=f"Code generation failed: {gen_result_retry.error}",
+                generated_files=[],
+                all_artifacts=all_artifacts,
+                next_step_ready=False,
+                tool_uses_count=0,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+            )
     
     # 3. Run code (first attempt)
     print(f"[EXECUTOR] Running generated code for step {step_number}...")
@@ -300,8 +305,19 @@ def _execute_card_step(
     if not run_result.success:
         print(f"[EXECUTOR] First execution failed, retrying with error feedback...")
         
+        # Build a rich error message for the generator:
+        # - run_result.error: aggregates returncode + stderr + ui.json validation failures
+        # - run_result.stdout: may contain informative print() calls from the script
+        #   (e.g. "column X not found") that are absent from stderr
+        error_parts = []
+        if run_result.error:
+            error_parts.append(run_result.error)
+        if run_result.stdout and run_result.stdout.strip():
+            error_parts.append(f"Script stdout:\n{run_result.stdout.strip()}")
+        previous_error = "\n\n".join(error_parts) if error_parts else "Unknown execution error"
+        
         # Retry with error feedback
-        gen_result_retry = generate_code(context, previous_error=run_result.stderr)
+        gen_result_retry = generate_code(context, previous_error=previous_error)
         
         if gen_result_retry.success:
             print(f"[EXECUTOR] Retrying execution with fixed code...")
@@ -311,13 +327,13 @@ def _execute_card_step(
                 ui_json_path=context.workspace["ui_json_path"],
                 timeout=60,
             )
-            # Update tokens from retry
-            gen_result.input_tokens += gen_result_retry.input_tokens
-            gen_result.output_tokens += gen_result_retry.output_tokens
+            total_input_tokens += gen_result_retry.input_tokens
+            total_output_tokens += gen_result_retry.output_tokens
         else:
             print(f"[ERROR] Retry code generation also failed")
     
-    # 5. Extract summary from ui.json
+    # 5. Extract summary from {output_name}_ui.json
+    ui_json_path = _resolve_ui_json_path(ui_json_path, ui_json_path.parent)
     summary = "Code execution failed"
     if run_result.success and ui_json_path.exists():
         summary = _extract_summary_from_ui_json(ui_json_path)
@@ -326,8 +342,6 @@ def _execute_card_step(
     
     # 6. Persist to llm_interactions
     try:
-        from main import LlmInteraction
-        
         # Build model_answer as JSON string (following planner pattern)
         model_answer_dict = {
             "code_generated": True,
@@ -344,8 +358,8 @@ def _execute_card_step(
             agent="executor",
             prompt=context.to_prompt_text()[:2000],  # Truncate prompt to avoid oversized records
             model_answer=json.dumps(model_answer_dict, ensure_ascii=False),
-            input_tokens=gen_result.input_tokens,
-            output_tokens=gen_result.output_tokens,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
             created_at=datetime.utcnow()
         )
         db.add(interaction)
@@ -353,12 +367,11 @@ def _execute_card_step(
         print(f"[EXECUTOR] Interaction persisted to database")
         
     except Exception as persist_error:
+        db.rollback()
         print(f"[WARNING] Failed to persist LLM interaction: {persist_error}")
         # Don't fail the whole execution if persistence fails
     
     # 7. Build and return result
-    next_step = step_number == total_steps  # Not ready if last step
-    
     return StepExecutionResult(
         task_id=task_id,
         step_number=step_number,
@@ -368,10 +381,10 @@ def _execute_card_step(
         summary=summary,
         generated_files=run_result.generated_files,
         all_artifacts=all_artifacts,
-        next_step_ready=not next_step,  # Ready if there are more steps
+        next_step_ready=next_step_ready,
         tool_uses_count=0,
-        input_tokens=gen_result.input_tokens,
-        output_tokens=gen_result.output_tokens,
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
     )
 
 
@@ -407,9 +420,6 @@ def executor_orchestrator(
         
         step = steps[current_step - 1]
         total_steps = len(steps)
-        
-        # Import Task model (avoiding circular import)
-        from main import Task
         
         # Get task to extract csv_paths
         task = db.query(Task).filter(Task.id == task_id).first()

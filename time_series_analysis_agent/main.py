@@ -14,11 +14,11 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, TIMESTAMP
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 from dotenv import load_dotenv
 
+from models import Base, Task, LlmInteraction
 from agents.planner_agent import (
     planner_agent_file,
     build_conversation_history
@@ -43,39 +43,8 @@ UPLOADS_DIR = WORKSPACE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # === Database setup ===
-Base = declarative_base()
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-
-class Task(Base):
-    """Task table: stores user tasks and their current state."""
-    __tablename__ = "tasks"
-    
-    id = Column(String, primary_key=True, index=True)
-    prompt = Column(Text, nullable=False)
-    status = Column(String, nullable=False)
-    data_source_type = Column(String, nullable=False)
-    data_source_meta = Column(Text, nullable=False)
-    result = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class LlmInteraction(Base):
-    """LLM interactions table: audit log of all agent calls."""
-    __tablename__ = "llm_interactions"
-    
-    id = Column(String, primary_key=True, index=True)
-    task_id = Column(String, nullable=False, index=True)
-    agent = Column(String, nullable=False)
-    prompt = Column(Text, nullable=False)
-    model_answer = Column(Text, nullable=False)
-    input_tokens = Column(Integer, nullable=False)
-    output_tokens = Column(Integer, nullable=False)
-    raw_response = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 
 # Create tables (no drop_all)
 Base.metadata.create_all(bind=engine)
@@ -232,6 +201,16 @@ def _run_planner_and_save(
             model_answer_dict = json.loads(model_answer_dict)
         except json.JSONDecodeError:
             model_answer_dict = {"answer": model_answer_dict, "plan": []}
+
+    plan_with_numbers = []
+    for i, step in enumerate(model_answer_dict.get("plan", []), 1):
+        if isinstance(step, dict):
+            step["step"] = i
+            plan_with_numbers.append(step)
+        else:
+            plan_with_numbers.append({"step": i, "description": str(step)})
+    model_answer_dict["plan"] = plan_with_numbers
+
     model_answer_json = json.dumps(model_answer_dict)
     
     # Save interaction (model_answer column is Text — must be a string)
@@ -418,10 +397,13 @@ def send_message(
         task.updated_at = datetime.utcnow()
         db.commit()
     
-    # Load conversation history
+    # Load conversation history (planner only — executor prompts are technical)
     interactions = (
         db.query(LlmInteraction)
-        .filter(LlmInteraction.task_id == task_id)
+        .filter(
+            LlmInteraction.task_id == task_id,
+            LlmInteraction.agent == "planner",
+        )
         .order_by(LlmInteraction.created_at)
         .all()
     )
@@ -659,11 +641,14 @@ def execute_step(task_id: str, request: ExecuteStepRequest, db: Session = Depend
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # Validate status
-    if task.status not in ["executing", "proceeded"]:
+    # Validate status — must have called /execute/start first
+    if task.status != "executing":
         raise HTTPException(
             status_code=400,
-            detail=f"Task must be 'executing' (current: '{task.status}')"
+            detail=(
+                f"Task must be 'executing' before running a step "
+                f"(current: '{task.status}'). Call /execute/start first."
+            ),
         )
     
     # Load execution state

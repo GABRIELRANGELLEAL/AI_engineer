@@ -58,7 +58,9 @@ def _build_code_generation_prompt(
 
         CRITICAL REQUIREMENTS:
         - Use ONLY the column names shown in DATA PREVIEW (do NOT guess or hallucinate)
-        - Use ONLY the file paths shown in WORKSPACE PATHS
+        - Use ONLY the file paths shown in WORKSPACE PATHS exactly as written
+        - The script runs with cwd=workspace — paths like "uploads/..." or "outputs/..." are
+          already correct. Do NOT prepend "workspace/" or join with a workspace_root prefix
         - Follow the PLOTLY CONTRACT examples for plotting (use plotly.express or graph_objects)
         - Handle datetime parsing with pd.to_datetime() where needed
         - Use json.dumps(..., ensure_ascii=False, default=str) to handle numpy/datetime types
@@ -82,6 +84,16 @@ def _build_code_generation_prompt(
         - Use try/except blocks for data loading and transformations
         - If a column is missing, use alternative columns or skip that part gracefully
         - Print informative error messages to help debug issues
+
+        PYTHON SYNTAX RULES (critical — invalid code will be rejected):
+        - All markdown/text for UI blocks MUST be inside quoted strings or f-strings (triple quotes)
+          Wrong: - **Total Change:** {change:+.2f} as bare Python lines
+          Right: analysis_text = f"- **Total Change:** {change:+.2f}"
+        - Never use integers with leading zeros: 08 and 09 are syntax errors (use 8, 9, or "08")
+        - Dates/versions inside f-strings must be variables or quoted strings, never dotted numbers
+          (wrong: f"{1.0.0}" or f"{2024.01.08}" — use f"{version}" with version="1.0.0")
+        - Date filters must use quoted strings: df[df["date"] >= "2024-01-08"], not bare 2024.01.08
+        - Pre-compute expressions before f-strings: r_squared = r_value ** 2; f"{r_squared:.4f}"
     """
 
     # Build user message with context
@@ -104,10 +116,21 @@ def _build_code_generation_prompt(
             "Fix the script to handle this error. Do NOT change the analysis goal.",
             "Common fixes:",
             "- Check column names match DATA PREVIEW exactly (case-sensitive)",
+            "- Use file paths from input_files directly (e.g. pd.read_csv('uploads/...'))",
+            "- Do NOT prefix paths with 'workspace/' — cwd is already the workspace folder",
             "- Add pd.to_datetime() for date columns",
             "- Handle missing values with .dropna() or .fillna()",
             "- Use default=str in json.dumps() for datetime/numpy serialization",
         ])
+        if "syntax error" in previous_error.lower() or "invalid decimal literal" in previous_error.lower():
+            user_parts.extend([
+                "",
+                "SYNTAX FIX CHECKLIST:",
+                "- Wrap ALL markdown bullets and {var:.2f} placeholders inside f\"\"\"...\"\"\" strings",
+                "- Remove leading zeros from numeric literals (08 → 8 or \"08\")",
+                "- Replace dotted numbers in f-string braces with string variables",
+                "- Ensure all dates in comparisons are quoted strings",
+            ])
     
     return system_prompt, "\n".join(user_parts)
 
@@ -178,10 +201,16 @@ def _validate_generated_code(code: str) -> tuple[bool, Optional[str]]:
     if not has_json:
         return False, "Generated code missing json import (required for ui.json output)"
     
-    # Check for UI JSON output logic
-    has_ui_json_ref = "ui_json_path" in code or "output_dir" in code
-    has_json_dump = "json.dump" in code or "json.dumps" in code
-    
+    # Check for UI JSON output logic (case-insensitive — LLM may use UI_JSON_PATH or ui_json_path)
+    code_lower = code.lower()
+    has_ui_json_ref = (
+        "ui_json_path" in code_lower
+        or "output_dir" in code_lower
+        or "_ui.json" in code_lower
+        or "ui.json" in code_lower
+    )
+    has_json_dump = "json.dump" in code_lower
+
     if not (has_ui_json_ref and has_json_dump):
         return False, "Generated code must contain ui.json output logic (path reference + json.dump)"
     
@@ -189,7 +218,11 @@ def _validate_generated_code(code: str) -> tuple[bool, Optional[str]]:
     try:
         compile(code, "<generated>", "exec")
     except SyntaxError as e:
-        return False, f"Syntax error in generated code: {e}"
+        lines = code.splitlines()
+        line_hint = ""
+        if e.lineno and 1 <= e.lineno <= len(lines):
+            line_hint = f" — offending line: {lines[e.lineno - 1].strip()!r}"
+        return False, f"Syntax error in generated code: {e}{line_hint}"
     
     return True, None
 

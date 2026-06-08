@@ -269,16 +269,18 @@ def planner_agent_file(
 
 def build_conversation_history(interactions: list) -> list[dict]:
     """
-    Build Anthropic conversation history from stored interactions.
+    Build Anthropic conversation history from stored planner interactions.
     
     Args:
-        interactions: List of LlmInteraction rows ordered by created_at
+        interactions: List of LlmInteraction rows (agent="planner") ordered by created_at
         
     Returns:
         List of message dicts in Anthropic format
     """
     messages = []
     for interaction in interactions:
+        if getattr(interaction, "agent", "planner") != "planner":
+            continue
         messages.append({"role": "user", "content": interaction.prompt})
         # model_answer is stored as JSON text in the database
         assistant_content = interaction.model_answer

@@ -5,7 +5,7 @@ Code Runner for Executor Agent
 Executes generated Python scripts in isolated subprocess with:
 - Timeout control (default 60s)
 - Stdout/stderr capture
-- Output validation (ui.json existence and format)
+- Output validation ({output_name}_ui.json existence and format)
 - Artifact listing
 
 Safety measures:
@@ -15,6 +15,7 @@ Safety measures:
 """
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,11 +32,11 @@ class CodeRunResult:
     Result from running generated code.
     
     Attributes:
-        success: True if script executed successfully and produced valid ui.json
+        success: True if script executed successfully and produced valid *_ui.json
         returncode: Process exit code (0 = success)
         stdout: Standard output from script
         stderr: Standard error (includes traceback if failed)
-        ui_json_valid: True if ui.json exists and is valid JSON with blocks
+        ui_json_valid: True if *_ui.json exists and is valid JSON with blocks
         generated_files: List of all files created in step directory (relative to workspace)
         error: Human-readable error message (None if success)
     """
@@ -48,12 +49,50 @@ class CodeRunResult:
     error: Optional[str] = None
 
 
+def _normalize_generated_code_paths(code: str) -> str:
+    """
+    Strip erroneous 'workspace/' prefix from string paths in generated scripts.
+
+    Scripts run with cwd=workspace, so paths like 'uploads/...' are correct.
+    LLMs often incorrectly prefix with 'workspace/', causing double nesting.
+    """
+    code = re.sub(r'(["\'])workspace/', r"\1", code)
+    code = re.sub(
+        r'workspace_root\s*=\s*["\']workspace/?["\']',
+        'workspace_root = ""',
+        code,
+    )
+    return code
+
+
+def _resolve_ui_json_path(expected_path: Path, step_dir: Path) -> Path:
+    """
+    Resolve the UI output file for a step.
+
+    Prefers the expected {output_name}_ui.json path from context_builder.
+    Falls back to any *_ui.json in the step directory if the script used
+    a slightly different name.
+    """
+    if expected_path.exists():
+        return expected_path
+
+    matches = sorted(step_dir.glob("*_ui.json"))
+    if matches:
+        print(
+            f"[CODE_RUNNER] Expected {expected_path.name} not found; "
+            f"using {matches[0].name}"
+        )
+        return matches[0]
+
+    return expected_path
+
+
 def _validate_ui_json(ui_json_path: Path) -> tuple[bool, Optional[str]]:
     """
-    Validate that ui.json exists and has correct structure.
+    Validate that the UI output file exists and has correct structure.
     
     Args:
-        ui_json_path: Absolute path to ui.json file
+        ui_json_path: Absolute path to {output_name}_ui.json file
         
     Returns:
         (is_valid, error_message)
@@ -67,10 +106,10 @@ def _validate_ui_json(ui_json_path: Path) -> tuple[bool, Optional[str]]:
         
         # Check required fields
         if not isinstance(ui_data, dict):
-            return False, "ui.json must be a dictionary"
+            return False, f"{ui_json_path.name} must be a dictionary"
         
         if "blocks" not in ui_data:
-            return False, "ui.json missing 'blocks' field"
+            return False, f"{ui_json_path.name} missing 'blocks' field"
         
         if not isinstance(ui_data["blocks"], list):
             return False, "'blocks' must be a list"
@@ -79,9 +118,9 @@ def _validate_ui_json(ui_json_path: Path) -> tuple[bool, Optional[str]]:
         return True, None
         
     except json.JSONDecodeError as e:
-        return False, f"Invalid JSON in ui.json: {str(e)}"
+        return False, f"Invalid JSON in {ui_json_path.name}: {str(e)}"
     except Exception as e:
-        return False, f"Error reading ui.json: {str(e)}"
+        return False, f"Error reading {ui_json_path.name}: {str(e)}"
 
 
 def _list_generated_files(step_dir: Path) -> List[str]:
@@ -120,14 +159,14 @@ def run_code(
         2. Save code to script.py
         3. Execute with subprocess (cwd=workspace)
         4. Capture stdout/stderr
-        5. Validate ui.json was created
+        5. Validate {output_name}_ui.json was created
         6. List all generated files
         7. Return structured result
     
     Args:
         code: Python code to execute (complete script)
         script_path: Where to save script (relative to workspace, e.g., "outputs/abc/step_1/script.py")
-        ui_json_path: Expected ui.json path (relative to workspace)
+        ui_json_path: Expected UI output path (relative to workspace, e.g., "outputs/abc/step_1/analysis_ui.json")
         timeout: Max execution time in seconds (default 60)
         
     Returns:
@@ -155,7 +194,8 @@ def run_code(
         # 1. Create step directory
         step_dir.mkdir(parents=True, exist_ok=True)
         
-        # 2. Save script
+        # 2. Save script (normalize common LLM path mistake before writing)
+        code = _normalize_generated_code_paths(code)
         with open(script_abs, "w", encoding="utf-8") as f:
             f.write(code)
         
@@ -232,11 +272,12 @@ def run_code(
             error=error_msg,
         )
     
-    # 4. Validate output
+    # 4. Validate output (resolve expected path or fallback *_ui.json in step dir)
+    ui_json_abs = _resolve_ui_json_path(ui_json_abs, step_dir)
     try:
         ui_json_valid, validation_error = _validate_ui_json(ui_json_abs)
     except Exception as e:
-        print(f"[CODE_RUNNER] Unexpected error during ui.json validation: {str(e)}")
+        print(f"[CODE_RUNNER] Unexpected error during UI output validation: {str(e)}")
         validation_error = f"Validation error: {str(e)}"
         ui_json_valid = False
     
@@ -254,7 +295,7 @@ def run_code(
             if stderr:
                 error += f"\n\nTraceback:\n{stderr}"
         elif not ui_json_valid:
-            error = validation_error or "ui.json validation failed"
+            error = validation_error or "UI output validation failed"
     
     return CodeRunResult(
         success=success,

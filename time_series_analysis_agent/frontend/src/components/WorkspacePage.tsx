@@ -26,15 +26,9 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
     setCurrentPlan(plan);
     if (status) {
       setTaskStatus(status);
-      // Reset selection when plan is modified (back to plan_ready from proceeded)
-      if (status === 'plan_ready') {
-        setSelectedSteps(plan.map(item => item.step));
-      }
     }
-    // Reset selection when new plan arrives (initial plan)
-    if (!taskStatus || taskStatus === 'planning') {
-      setSelectedSteps(plan.map(item => item.step));
-    }
+    // Select all steps whenever the plan is created or updated
+    setSelectedSteps(plan.length > 0 ? plan.map((item) => item.step) : []);
   };
 
   const handleTaskCreated = (id: string, initialMessage: Message, assistantMessage: Message, status?: string) => {

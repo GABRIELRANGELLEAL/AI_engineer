@@ -374,7 +374,7 @@ def build_context(
     
     Args:
         task_id: Task ID
-        output_name: Output name (for ui.json filename)
+        output_name: Output name prefix (produces {output_name}_ui.json)
         step: Current step dict from plan (with description, reasoning, thinking_budget)
         csv_paths: List of CSV paths relative to workspace
         current_step: Current step number (1-indexed)
@@ -395,11 +395,15 @@ def build_context(
     # 2. Workspace paths
     output_dir = f"outputs/{task_id}/step_{current_step}"
     workspace_meta = {
-        "workspace_root": "workspace/",
+        "cwd": ".",
+        "path_note": (
+            "Script runs with cwd=workspace. Use input_files, output_dir, "
+            "and ui_json_path exactly as shown — do NOT prefix with 'workspace/'."
+        ),
         "input_files": csv_paths,
         "output_dir": output_dir,
         "ui_json_path": f"{output_dir}/{output_name}_ui.json",
-        "script_path": f"{output_dir}/script.py"
+        "script_path": f"{output_dir}/script.py",
     }
     
     # 3. Data preview

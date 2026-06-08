@@ -77,7 +77,8 @@ class AgentConfig:
     Examples:
     - 2000 = brief thinking
     - 8000-10000 = deep thinking
-    When enabled, temperature is automatically set to 1.0 (required by API)
+    When enabled, temperature is overridden to 1.0 (API requirement).
+    When disabled, temperature from config is always sent to the API.
     """
     
     # Loop configuration
@@ -247,7 +248,7 @@ class AgentLoop:
                 if self.config.system_prompt:
                     request_params["system"] = self.config.system_prompt
                 
-                # Add thinking configuration if enabled
+                # Temperature: always send explicitly so config values (e.g. 0.3) are honored
                 if self.config.thinking_budget:
                     request_params["thinking"] = {
                         "type": "enabled",
@@ -255,7 +256,7 @@ class AgentLoop:
                     }
                     # Temperature must be 1.0 when thinking is enabled (API requirement)
                     request_params["temperature"] = 1.0
-                elif self.config.temperature != 1.0:
+                else:
                     request_params["temperature"] = self.config.temperature
                 
                 response = self.client.messages.create(**request_params)

@@ -24,6 +24,9 @@ export interface PlannerTurnResponse {
 export interface PlanItem {
   step: number;
   description: string;
+  reasoning?: string;
+  thinking_budget?: number | null;
+  output_type?: string;
   agent?: string;
 }
 
