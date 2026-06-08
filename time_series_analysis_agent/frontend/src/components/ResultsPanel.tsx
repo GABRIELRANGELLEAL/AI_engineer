@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FileText, BarChart3, Play, Loader2, CheckCircle2, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import type { Message, PlanItem } from '../types';
 import { proceedTask } from '../api';
-import ExecutionPanel from './ExecutionPanel';
+import ExecutionPanel, { type StepResultState } from './ExecutionPanel';
 
 interface Props {
   messages: Message[];
@@ -12,6 +12,10 @@ interface Props {
   onStatusChange: (status: string) => void;
   selectedSteps: number[];
   onStepsChange: (steps: number[]) => void;
+  onStepResultsChange?: (
+    stepResults: Record<number, StepResultState>,
+    completedSteps: number[]
+  ) => void;
 }
 
 export default function ResultsPanel({ 
@@ -20,7 +24,8 @@ export default function ResultsPanel({
   taskStatus, 
   onStatusChange,
   selectedSteps,
-  onStepsChange 
+  onStepsChange,
+  onStepResultsChange,
 }: Props) {
   const [building, setBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
@@ -212,6 +217,7 @@ export default function ResultsPanel({
           taskId={taskId}
           taskStatus={taskStatus}
           onStatusChange={onStatusChange}
+          onStepResultsChange={onStepResultsChange}
         />
       )}
 

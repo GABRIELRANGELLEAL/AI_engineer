@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { ArrowLeft, Upload } from 'lucide-react';
 import ChatInterface from './ChatInterface';
 import ResultsPanel from './ResultsPanel';
+import StepResultsSection from './StepResultsSection';
 import FileUploadZone from './FileUploadZone';
 import type { Message, PlanItem, UploadedFile } from '../types';
+import type { StepResultState } from './ExecutionPanel';
 
 interface Props {
   dataSourceType: 'csv' | 'database';
@@ -17,6 +19,18 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [taskStatus, setTaskStatus] = useState<string>('');
   const [selectedSteps, setSelectedSteps] = useState<number[]>([]);
+  const [stepResults, setStepResults] = useState<Record<number, StepResultState>>({});
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  const handleStepResultsChange = useCallback(
+    (results: Record<number, StepResultState>, steps: number[]) => {
+      setStepResults(results);
+      setCompletedSteps(steps);
+    },
+    []
+  );
+
+  const hasStepResults = Object.keys(stepResults).length > 0;
 
   const handleNewMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -46,7 +60,7 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950">
+    <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
       {/* Header */}
       <header className="bg-slate-900 shadow-lg border-b border-slate-800">
         <div className="px-6 py-4 flex items-center justify-between">
@@ -74,9 +88,15 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Side: Upload + Chat */}
-        <div className="flex-1 flex flex-col border-r border-slate-800 bg-slate-900">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Upper pane: chat + plan/execution controls (fixed height when results exist) */}
+        <div
+          className={`flex min-h-0 overflow-hidden ${
+            hasStepResults ? 'h-[50vh] shrink-0' : 'flex-1'
+          }`}
+        >
+          {/* Left Side: Upload + Chat */}
+          <div className="flex-1 flex flex-col min-h-0 border-r border-slate-800 bg-slate-900">
           {/* File Upload Zone (CSV only, shown before task created) */}
           {dataSourceType === 'csv' && !taskId && (
             <div className="p-4 border-b border-slate-800 bg-slate-900">
@@ -113,7 +133,7 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
           )}
 
           {/* Chat Interface */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden">
             <ChatInterface
               taskId={taskId}
               uploadedFiles={uploadedFiles}
@@ -126,18 +146,31 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
           </div>
         </div>
 
-        {/* Right Side: Results Panel */}
-        <div className="w-[50%] bg-slate-900 overflow-auto">
-          <ResultsPanel 
-            messages={messages} 
+        {/* Right Side: Results Panel (plan + execution controls) */}
+        <div className="w-[50%] min-h-0 overflow-hidden bg-slate-900">
+          <ResultsPanel
+            messages={messages}
             plan={currentPlan}
             taskId={taskId}
             taskStatus={taskStatus}
             onStatusChange={setTaskStatus}
             selectedSteps={selectedSteps}
             onStepsChange={setSelectedSteps}
+            onStepResultsChange={handleStepResultsChange}
           />
         </div>
+        </div>
+
+        {/* Full-width step results */}
+        {hasStepResults && taskId && (
+          <div className="flex-1 min-h-0 overflow-y-auto border-t border-slate-700 bg-slate-950 w-full">
+            <StepResultsSection
+              stepResults={stepResults}
+              completedSteps={completedSteps}
+              taskId={taskId}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

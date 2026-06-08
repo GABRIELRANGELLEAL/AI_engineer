@@ -1,16 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Play, Loader2, CheckCircle2, ChevronRight } from 'lucide-react';
 import { startExecution, executeStep, getExecutionStatus } from '../api';
-import StepResultPanel from './StepResultPanel';
 import type { StepExecutionResult } from '../types';
 
-interface Props {
-  taskId: string;
-  taskStatus: string;
-  onStatusChange: (status: string) => void;
-}
-
-interface StepResultState {
+export interface StepResultState {
   stepNumber: number;
   description: string;
   summary: string;
@@ -19,7 +12,22 @@ interface StepResultState {
   artifacts: string[];
 }
 
-export default function ExecutionPanel({ taskId, taskStatus, onStatusChange }: Props) {
+interface Props {
+  taskId: string;
+  taskStatus: string;
+  onStatusChange: (status: string) => void;
+  onStepResultsChange?: (
+    stepResults: Record<number, StepResultState>,
+    completedSteps: number[]
+  ) => void;
+}
+
+export default function ExecutionPanel({
+  taskId,
+  taskStatus,
+  onStatusChange,
+  onStepResultsChange,
+}: Props) {
   const [executionStarted, setExecutionStarted] = useState(false);
   const [totalSteps, setTotalSteps] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
@@ -36,6 +44,10 @@ export default function ExecutionPanel({ taskId, taskStatus, onStatusChange }: P
       loadExecutionStatus();
     }
   }, [taskId, taskStatus]);
+
+  useEffect(() => {
+    onStepResultsChange?.(stepResults, completedSteps);
+  }, [stepResults, completedSteps, onStepResultsChange]);
 
   const loadExecutionStatus = async () => {
     try {
@@ -244,29 +256,6 @@ export default function ExecutionPanel({ taskId, taskStatus, onStatusChange }: P
         </div>
       )}
 
-      {/* Step Results */}
-      {Object.keys(stepResults).length > 0 && (
-        <div className="space-y-4 w-full">
-          <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2 border-b border-slate-700 pb-2">
-            Resultados da Análise
-          </h3>
-          <div className="space-y-3">
-            {completedSteps
-              .sort((a, b) => a - b)
-              .map((stepNum) => {
-                const result = stepResults[stepNum];
-                if (!result) return null;
-                return (
-                  <StepResultPanel
-                    key={stepNum}
-                    stepResult={result}
-                    taskId={taskId}
-                  />
-                );
-              })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
