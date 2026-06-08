@@ -27,6 +27,7 @@ interface Props {
   taskId: string | null;
   uploadedFiles: UploadedFile[];
   dataSourceType: 'csv' | 'database';
+  taskStatus?: string;
   onTaskCreated: (taskId: string, userMessage: Message, assistantMessage: Message, status?: string) => void;
   onNewMessage: (message: Message) => void;
   onPlanUpdate: (plan: PlanItem[], status?: string) => void;
@@ -36,6 +37,7 @@ export default function ChatInterface({
   taskId,
   uploadedFiles,
   dataSourceType,
+  taskStatus = '',
   onTaskCreated,
   onNewMessage,
   onPlanUpdate,
@@ -66,6 +68,12 @@ export default function ChatInterface({
     // For Database: show coming soon message
     if (dataSourceType === 'database' && !taskId) {
       setError('Database connection is not yet implemented. Please use CSV upload.');
+      return;
+    }
+
+    // Prevent messages during execution
+    if (taskStatus === 'executing' || taskStatus === 'completed') {
+      setError('Cannot send messages while task is executing or completed');
       return;
     }
 
@@ -239,15 +247,19 @@ export default function ChatInterface({
             placeholder={
               dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0
                 ? 'Upload CSV files first...'
+                : taskStatus === 'executing' || taskStatus === 'completed'
+                ? 'Chat is disabled during execution...'
+                : taskStatus === 'proceeded'
+                ? 'You can still modify the plan before execution starts...'
                 : 'Type your message... (Press Enter to send, Shift+Enter for new line)'
             }
             rows={2}
             className="flex-1 px-4 py-3 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-            disabled={loading || (dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0)}
+            disabled={loading || (dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0) || taskStatus === 'executing' || taskStatus === 'completed'}
           />
           <button
             onClick={handleSend}
-            disabled={loading || !input.trim() || (dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0)}
+            disabled={loading || !input.trim() || (dataSourceType === 'csv' && !taskId && uploadedFiles.length === 0) || taskStatus === 'executing' || taskStatus === 'completed'}
             className="px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >
             {loading ? (

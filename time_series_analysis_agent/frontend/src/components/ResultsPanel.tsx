@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, BarChart3, Play, Loader2, CheckCircle2, CheckSquare, Square } from 'lucide-react';
+import { FileText, BarChart3, Play, Loader2, CheckCircle2, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import type { Message, PlanItem } from '../types';
 import { proceedTask } from '../api';
 import ExecutionPanel from './ExecutionPanel';
@@ -15,7 +15,6 @@ interface Props {
 }
 
 export default function ResultsPanel({ 
-  messages, 
   plan, 
   taskId, 
   taskStatus, 
@@ -50,13 +49,17 @@ export default function ResultsPanel({
   const handleBuild = async () => {
     if (!taskId || !canBuild) return;
     
+    console.log('[DEBUG] Approve Plan clicked:', { taskId, selectedSteps });
+    
     setBuilding(true);
     setBuildError(null);
     
     try {
-      await proceedTask(taskId);
+      console.log('[DEBUG] Calling proceedTask with:', { taskId, selectedSteps });
+      await proceedTask(taskId, selectedSteps);
       onStatusChange('proceeded');
     } catch (err: any) {
+      console.error('[ERROR] Proceed failed:', err);
       setBuildError(err.response?.data?.detail || 'Failed to proceed with plan');
     } finally {
       setBuilding(false);
@@ -78,6 +81,21 @@ export default function ResultsPanel({
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+      {/* Info Banner - Plan approved but can still be modified */}
+      {taskStatus === 'proceeded' && (
+        <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-medium text-blue-300 mb-1">
+              Plan Approved
+            </h4>
+            <p className="text-sm text-blue-200">
+              You can still modify the plan by sending new messages in the chat. Once execution starts, changes won't be possible.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Plan Section */}
       {plan && plan.length > 0 && (

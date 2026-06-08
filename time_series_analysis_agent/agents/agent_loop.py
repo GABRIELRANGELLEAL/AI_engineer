@@ -67,7 +67,7 @@ class AgentConfig:
     """
     
     # LLM configuration
-    model: str = "claude-3-5-sonnet-20241022"
+    model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 4096
     temperature: float = 1.0
     system_prompt: Optional[str] = None

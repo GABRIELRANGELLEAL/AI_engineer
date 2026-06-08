@@ -22,7 +22,7 @@ interface Props {
   taskId: string;
 }
 
-export default function StepResultPanel({ stepResult, taskId }: Props) {
+export default function StepResultPanel({ stepResult }: Props) {
   const [uiPayload, setUiPayload] = useState<UIPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -23,8 +23,7 @@ from agents.planner_agent import (
     planner_agent_file,
     build_conversation_history
 )
-from agents.helper_contet_agent import helper_contet_agent
-from agents.executor_agent import executor_agent
+from agents.executor_orchestrator import executor_orchestrator
 
 # === Environment setup ===
 load_dotenv()
@@ -401,12 +400,23 @@ def send_message(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # Reject if already proceeded
-    if task.status == "proceeded":
+    # Reject if already executing or completed
+    if task.status in ["executing", "completed"]:
         raise HTTPException(
             status_code=400,
-            detail="Cannot send messages after task has been proceeded"
+            detail="Cannot send messages while task is executing or completed"
         )
+    
+    # If task was proceeded but not yet executing, reset to plan_ready to allow edits
+    if task.status == "proceeded":
+        task.status = "plan_ready"
+        # Remove selected_steps to allow re-selection
+        if task.result:
+            result = json.loads(task.result)
+            result.pop("selected_steps", None)
+            task.result = json.dumps(result)
+        task.updated_at = datetime.utcnow()
+        db.commit()
     
     # Load conversation history
     interactions = (
@@ -429,22 +439,39 @@ def send_message(
         raise HTTPException(status_code=500, detail=f"Planner error: {str(e)}")
 
 
+class ProceedRequest(BaseModel):
+    """Request to proceed with selected steps."""
+    selected_steps: List[int] = Field(..., description="List of step numbers to execute")
+    
+    class Config:
+        validate_assignment = True
+    
+    @property
+    def is_valid(self) -> bool:
+        return self.selected_steps and len(self.selected_steps) > 0
+
+
 @app.post("/tasks/{task_id}/proceed")
-def proceed_task(task_id: str, db: Session = Depends(get_db)):
+def proceed_task(task_id: str, request: ProceedRequest, db: Session = Depends(get_db)):
     """
     Mark task as proceeded (ready for translator/executor phase).
     
     Args:
         task_id: Task ID
+        request: Proceed request with selected steps
         db: Database session
         
     Returns:
         Success message
     """
+    print(f"[DEBUG] Proceed request received: task_id={task_id}, selected_steps={request.selected_steps}")
+    
     # Load task
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    print(f"[DEBUG] Task status: {task.status}")
     
     # Validate status
     if task.status not in ["planning", "plan_ready"]:
@@ -464,12 +491,49 @@ def proceed_task(task_id: str, db: Session = Depends(get_db)):
     else:
         raise HTTPException(status_code=400, detail="No result available")
     
+    # Validate selected steps
+    if not request.selected_steps:
+        print(f"[DEBUG] Selected steps is empty: {request.selected_steps}")
+        raise HTTPException(
+            status_code=400,
+            detail="Must select at least one step to execute"
+        )
+    
+    plan = result.get("plan", [])
+    print(f"[DEBUG] Plan items: {plan}")
+    
+    # Extract valid step numbers - handle both string and dict formats
+    valid_steps = []
+    for i, item in enumerate(plan, 1):
+        if isinstance(item, dict):
+            if "step" in item:
+                valid_steps.append(item["step"])
+            else:
+                # If dict doesn't have step, use index
+                valid_steps.append(i)
+        else:
+            # If string, use index (1-based)
+            valid_steps.append(i)
+    
+    print(f"[DEBUG] Valid steps: {valid_steps}, Selected steps: {request.selected_steps}")
+    invalid_steps = [s for s in request.selected_steps if s not in valid_steps]
+    
+    if invalid_steps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step numbers: {invalid_steps}"
+        )
+    
+    # Save selected steps in result
+    result["selected_steps"] = sorted(request.selected_steps)
+    task.result = json.dumps(result)
+    
     # Update status
     task.status = "proceeded"
     task.updated_at = datetime.utcnow()
     db.commit()
     
-    return {"status": "ok", "task_id": task_id, "message": "Task proceeded"}
+    return {"status": "ok", "task_id": task_id, "message": "Task proceeded", "selected_steps": request.selected_steps}
 
 
 class ExecuteStartRequest(BaseModel):
@@ -485,7 +549,7 @@ class ExecuteStepRequest(BaseModel):
 @app.post("/tasks/{task_id}/execute/start")
 def start_execution(task_id: str, request: ExecuteStartRequest, db: Session = Depends(get_db)):
     """
-    Prepare execution: run helper_contet_agent to enrich plan with skill info.
+    Prepare execution: load the planner's plan and initialize execution state.
     
     Args:
         task_id: Task ID
@@ -493,7 +557,7 @@ def start_execution(task_id: str, request: ExecuteStartRequest, db: Session = De
         db: Database session
         
     Returns:
-        Enriched execution plan with skill assignments
+        Execution state with plan steps ready for the executor
     """
     # Load task
     task = db.query(Task).filter(Task.id == task_id).first()
@@ -507,25 +571,40 @@ def start_execution(task_id: str, request: ExecuteStartRequest, db: Session = De
             detail=f"Task must be 'proceeded' to execute (current: '{task.status}')"
         )
     
-    # Load plan
+    # Load plan and selected steps
     if not task.result:
         raise HTTPException(status_code=400, detail="No plan available")
     
     result = json.loads(task.result)
     plan = result.get("plan", [])
+    selected_steps = result.get("selected_steps", [])
     
     if not plan:
         raise HTTPException(status_code=400, detail="Cannot execute without a plan")
     
-    try:
-        # Call helper_contet_agent to enrich steps with skill info
-        print(f"[DEBUG] Enriching plan with skills for task {task_id}")
-        enriched_steps = helper_contet_agent(plan)
+    if not selected_steps:
+        raise HTTPException(status_code=400, detail="No steps selected for execution")
+    
+    # Filter plan to include only selected steps
+    filtered_plan = []
+    for i, step in enumerate(plan, 1):
+        step_num = None
+        if isinstance(step, dict) and "step" in step:
+            step_num = step["step"]
+        else:
+            # Use 1-based index if no step field
+            step_num = i
         
-        # Store enriched plan in task result
+        if step_num in selected_steps:
+            filtered_plan.append(step)
+    
+    try:
+        print(f"[DEBUG] Starting execution for task {task_id} with {len(filtered_plan)} selected steps (out of {len(plan)} total)")
+        
         execution_state = {
             "output_name": request.output_name,
-            "steps": enriched_steps,
+            "steps": filtered_plan,
+            "selected_steps": selected_steps,
             "current_step": 0,
             "completed_steps": []
         }
@@ -541,7 +620,7 @@ def start_execution(task_id: str, request: ExecuteStartRequest, db: Session = De
             "task_id": task_id,
             "task_status": "executing",
             "execution_state": execution_state,
-            "total_steps": len(enriched_steps)
+            "total_steps": len(filtered_plan)
         }
         
     except Exception as e:
@@ -618,7 +697,7 @@ def execute_step(task_id: str, request: ExecuteStepRequest, db: Session = Depend
         # Execute step
         print(f"[DEBUG] Executing step {step_number} for task {task_id}")
         
-        exec_result = executor_agent(
+        exec_result = executor_orchestrator(
             task_id=task_id,
             output_name=output_name,
             steps=steps,

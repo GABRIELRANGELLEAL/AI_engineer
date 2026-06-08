@@ -63,8 +63,10 @@ export const getInteractions = async (taskId: string): Promise<InteractionRespon
   return response.data;
 };
 
-export const proceedTask = async (taskId: string): Promise<{ status: string; task_id: string; message: string }> => {
-  const response = await api.post(`/tasks/${taskId}/proceed`);
+export const proceedTask = async (taskId: string, selectedSteps: number[]): Promise<{ status: string; task_id: string; message: string; selected_steps: number[] }> => {
+  const response = await api.post(`/tasks/${taskId}/proceed`, {
+    selected_steps: selectedSteps
+  });
   return response.data;
 };
 
