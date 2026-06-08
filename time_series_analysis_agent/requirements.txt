@@ -28,6 +28,15 @@ pdfminer.six
 pymupdf
 anthropic
 
+# Data analysis and visualization (for executor agent)
+pandas
+numpy
+plotly
+matplotlib
+scipy
+statsmodels
+scikit-learn
+
 # Testing
 pytest
 pytest-asyncio

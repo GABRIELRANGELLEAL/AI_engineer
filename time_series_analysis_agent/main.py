@@ -21,11 +21,9 @@ from dotenv import load_dotenv
 
 from agents.planner_agent import (
     planner_agent_file,
-    serialize_raw_response,
-    build_conversation_history,
-    format_plan_as_text,
+    build_conversation_history
 )
-from agents.translator_agent import translator_agent, _extract_json
+from agents.helper_contet_agent import helper_contet_agent
 from agents.executor_agent import executor_agent
 
 # === Environment setup ===
@@ -246,7 +244,6 @@ def _run_planner_and_save(
         model_answer=model_answer_json,
         input_tokens=output["input_tokens"],
         output_tokens=output["output_tokens"],
-        raw_response=serialize_raw_response(raw_response),
         created_at=datetime.utcnow()
     )
     db.add(interaction)
@@ -475,23 +472,28 @@ def proceed_task(task_id: str, db: Session = Depends(get_db)):
     return {"status": "ok", "task_id": task_id, "message": "Task proceeded"}
 
 
-class ExecuteRequest(BaseModel):
-    """Request to execute plan with optional step selection."""
-    selected_steps: Optional[List[int]] = None
+class ExecuteStartRequest(BaseModel):
+    """Request to prepare execution plan."""
+    output_name: str = Field(..., description="Base name for output files (e.g., 'analysis_results')")
 
 
-@app.post("/tasks/{task_id}/execute")
-def execute_task(task_id: str, request: ExecuteRequest = None, db: Session = Depends(get_db)):
+class ExecuteStepRequest(BaseModel):
+    """Request to execute a specific step."""
+    step_number: int = Field(..., description="Step number to execute (1-indexed)")
+
+
+@app.post("/tasks/{task_id}/execute/start")
+def start_execution(task_id: str, request: ExecuteStartRequest, db: Session = Depends(get_db)):
     """
-    Execute the approved plan: translator -> executor.
+    Prepare execution: run helper_contet_agent to enrich plan with skill info.
     
     Args:
         task_id: Task ID
-        request: Optional selected steps to execute
+        request: Execution start parameters
         db: Database session
         
     Returns:
-        Execution results
+        Enriched execution plan with skill assignments
     """
     # Load task
     task = db.query(Task).filter(Task.id == task_id).first()
@@ -515,49 +517,133 @@ def execute_task(task_id: str, request: ExecuteRequest = None, db: Session = Dep
     if not plan:
         raise HTTPException(status_code=400, detail="Cannot execute without a plan")
     
-    # Filter plan by selected steps if provided
-    selected_steps = request.selected_steps if request else None
-    if selected_steps:
-        # Filter plan to only include selected steps
-        filtered_plan = []
-        for item in plan:
-            step_num = item if isinstance(item, dict) and "step" in item else plan.index(item) + 1
-            if isinstance(item, dict):
-                step_num = item.get("step", plan.index(item) + 1)
-            else:
-                step_num = plan.index(item) + 1
-            
-            if step_num in selected_steps:
-                filtered_plan.append(item)
-        
-        if not filtered_plan:
-            raise HTTPException(status_code=400, detail="No valid steps selected")
-        
-        plan = filtered_plan
-        result["plan"] = plan
-    
     try:
-        # Format plan for translator
-        plan_text = format_plan_as_text(result)
+        # Call helper_contet_agent to enrich steps with skill info
+        print(f"[DEBUG] Enriching plan with skills for task {task_id}")
+        enriched_steps = helper_contet_agent(plan)
         
-        # Translate to execution plan
-        print(f"[DEBUG] Translating plan for task {task_id}")
-        raw_translation = translator_agent(plan_text)
-        execution_plan = _extract_json(raw_translation)
+        # Store enriched plan in task result
+        execution_state = {
+            "output_name": request.output_name,
+            "steps": enriched_steps,
+            "current_step": 0,
+            "completed_steps": []
+        }
         
-        if not execution_plan or not execution_plan.get("execution_plan"):
-            raise ValueError("Translator returned invalid execution plan")
+        result["execution_state"] = execution_state
+        task.result = json.dumps(result)
+        task.status = "executing"
+        task.updated_at = datetime.utcnow()
+        db.commit()
         
-        # Execute
-        print(f"[DEBUG] Executing plan for task {task_id}")
-        exec_result = executor_agent(execution_plan)
+        return {
+            "status": "ok",
+            "task_id": task_id,
+            "task_status": "executing",
+            "execution_state": execution_state,
+            "total_steps": len(enriched_steps)
+        }
         
-        # Update task
-        task.status = "completed" if exec_result["status"] == "completed" else "failed"
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] Execution start failed:\n{error_details}")
+        
+        task.status = "failed"
         task.result = json.dumps({
             **result,
-            "execution_result": exec_result
+            "error": str(e)
         })
+        db.commit()
+        
+        raise HTTPException(status_code=500, detail=f"Execution start failed: {str(e)}")
+
+
+@app.post("/tasks/{task_id}/execute/step")
+def execute_step(task_id: str, request: ExecuteStepRequest, db: Session = Depends(get_db)):
+    """
+    Execute a specific step of the plan.
+    
+    This endpoint executes ONE step and returns results.
+    The frontend should call this for each step with user permission.
+    
+    Args:
+        task_id: Task ID
+        request: Step execution request
+        db: Database session
+        
+    Returns:
+        Step execution results
+    """
+    # Load task
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Validate status
+    if task.status not in ["executing", "proceeded"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task must be 'executing' (current: '{task.status}')"
+        )
+    
+    # Load execution state
+    if not task.result:
+        raise HTTPException(status_code=400, detail="No execution state available")
+    
+    result = json.loads(task.result)
+    execution_state = result.get("execution_state")
+    
+    if not execution_state:
+        raise HTTPException(
+            status_code=400,
+            detail="No execution state found. Call /execute/start first."
+        )
+    
+    steps = execution_state.get("steps", [])
+    output_name = execution_state.get("output_name", "output")
+    
+    if not steps:
+        raise HTTPException(status_code=400, detail="No steps to execute")
+    
+    # Validate step number
+    step_number = request.step_number
+    if step_number < 1 or step_number > len(steps):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step number {step_number}. Must be between 1 and {len(steps)}"
+        )
+    
+    try:
+        # Execute step
+        print(f"[DEBUG] Executing step {step_number} for task {task_id}")
+        
+        exec_result = executor_agent(
+            task_id=task_id,
+            output_name=output_name,
+            steps=steps,
+            current_step=step_number,
+            db=db
+        )
+        
+        # Update execution state
+        completed_steps = execution_state.get("completed_steps", [])
+        if step_number not in completed_steps:
+            completed_steps.append(step_number)
+        
+        execution_state["current_step"] = step_number
+        execution_state["completed_steps"] = completed_steps
+        execution_state["last_execution"] = exec_result
+        
+        result["execution_state"] = execution_state
+        
+        # Update task status
+        if step_number == len(steps) and exec_result.get("status") == "completed":
+            task.status = "completed"
+        else:
+            task.status = "executing"
+        
+        task.result = json.dumps(result)
         task.updated_at = datetime.utcnow()
         db.commit()
         
@@ -565,23 +651,128 @@ def execute_task(task_id: str, request: ExecuteRequest = None, db: Session = Dep
             "status": "ok",
             "task_id": task_id,
             "task_status": task.status,
-            "execution": exec_result
+            "execution_result": exec_result
         }
         
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Execution failed:\n{error_details}")
+        print(f"[ERROR] Step execution failed:\n{error_details}")
         
         task.status = "failed"
         task.result = json.dumps({
             **result,
             "execution_error": str(e)
         })
-        task.updated_at = datetime.utcnow()
         db.commit()
         
-        raise HTTPException(status_code=500, detail=f"Execution error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Step execution failed: {str(e)}")
+
+
+@app.get("/tasks/{task_id}/execute/status")
+def get_execution_status(task_id: str, db: Session = Depends(get_db)):
+    """
+    Get current execution status and progress.
+    
+    Args:
+        task_id: Task ID
+        db: Database session
+        
+    Returns:
+        Current execution state
+    """
+    # Load task
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if not task.result:
+        raise HTTPException(status_code=400, detail="No execution state available")
+    
+    result = json.loads(task.result)
+    execution_state = result.get("execution_state")
+    
+    if not execution_state:
+        return {
+            "status": "not_started",
+            "task_id": task_id,
+            "task_status": task.status,
+            "message": "Execution not started. Call /execute/start first."
+        }
+    
+    steps = execution_state.get("steps", [])
+    current_step = execution_state.get("current_step", 0)
+    completed_steps = execution_state.get("completed_steps", [])
+    
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "task_status": task.status,
+        "total_steps": len(steps),
+        "current_step": current_step,
+        "completed_steps": completed_steps,
+        "completed_count": len(completed_steps),
+        "execution_state": execution_state
+    }
+
+
+@app.get("/workspace/files/{file_path:path}")
+def get_workspace_file(file_path: str):
+    """
+    Serve files from workspace directory.
+    
+    Args:
+        file_path: Relative path from workspace root (e.g., 'outputs/task-id/step_1/file.json')
+        
+    Returns:
+        File content with appropriate content-type
+    """
+    # Security: prevent directory traversal
+    safe_path = Path(file_path).as_posix()
+    if ".." in safe_path or safe_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    
+    target = WORKSPACE_DIR / safe_path
+    
+    # Check if file exists and is within workspace
+    try:
+        target = target.resolve()
+        WORKSPACE_DIR.resolve()
+        
+        if not str(target).startswith(str(WORKSPACE_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not target.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid path: {str(e)}")
+    
+    # Determine content type
+    suffix = target.suffix.lower()
+    content_types = {
+        '.json': 'application/json',
+        '.csv': 'text/csv',
+        '.txt': 'text/plain',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.pdf': 'application/pdf'
+    }
+    
+    content_type = content_types.get(suffix, 'application/octet-stream')
+    
+    # Return file
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=target,
+        media_type=content_type,
+        filename=target.name
+    )
 
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse)

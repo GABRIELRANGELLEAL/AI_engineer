@@ -1,211 +1,343 @@
 # Time Series Analysis Agent
 
-A full-stack application for time series analysis powered by AI agents. The system features a FastAPI backend with multi-agent architecture and a modern React frontend for interactive analysis.
+A multi-agent system for analyzing time series data using Claude AI and specialized skills with **interactive visual results**.
 
-## Features
+## 🎯 Key Features
 
-- **Multi-Agent Architecture**: Planner, Translator, and Executor agents work together
-- **Flexible Data Sources**: Support for CSV files and database connections
-- **Interactive Chat Interface**: Conversational planning with the planner agent
-- **Real-time Results**: View analysis plans and agent responses in real-time
-- **Modern UI**: Clean, responsive interface built with React and Tailwind CSS
+- ✅ **Interactive Analytics UI** - Each step generates text narratives + tables + Plotly charts
+- ✅ **Step-by-step execution** with user approval between steps
+- ✅ **Multi-agent architecture** (Planner → Helper → Executor)
+- ✅ **Skill-based system** for specialized tasks
+- ✅ **PostgreSQL logging** for full audit trail
+- ✅ **Conversation-based planning** with file discovery
+- ✅ **Tool access** for reading, writing, and running code
 
-## Architecture
-
-### Backend (FastAPI)
-- **Planner Agent**: Analyzes user requests and creates execution plans
-- **Translator Agent**: Converts plans into executable code
-- **Executor Agent**: Runs analysis and generates results
-- **Database**: PostgreSQL for task management and interaction logging
-
-### Frontend (React + TypeScript)
-- **Data Source Selector**: Initial screen to choose CSV or Database
-- **Chat Interface**: Conversational UI for interacting with the planner agent
-- **Results Panel**: Real-time display of plans, outputs, and visualizations
-
-## Setup
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL database
-- OpenAI API key (or compatible LLM API)
+```bash
+# Python 3.10+
+pip install anthropic sqlalchemy psycopg2-binary fastapi uvicorn python-dotenv pandas plotly
 
-### Backend Setup
+# Node.js 18+
+cd frontend
+npm install
+```
 
-1. **Create virtual environment:**
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate  # Windows
-   # source .venv/bin/activate  # Linux/Mac
-   ```
+### Environment Setup
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+Create `.env`:
+```env
+ANTHROPIC_API_KEY=your_key_here
+DATABASE_URL=postgresql://user:pass@host:port/dbname
+```
 
-3. **Configure environment variables:**
-   Create a `.env` file in the root directory:
-   ```env
-   DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-   OPENAI_API_KEY=your_api_key_here
-   ```
+### Run
 
-4. **Run the backend:**
-   ```bash
-   python main.py
-   ```
-   The API will be available at `http://localhost:8000`
+```bash
+# Backend
+python main.py
+# → http://localhost:8000
 
-### Frontend Setup
+# Frontend (new terminal)
+cd frontend
+npm run dev
+# → http://localhost:3000
+```
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+## 📊 How It Works
 
-2. **Run the development server:**
-   ```bash
-   npm run dev
-   ```
-   The frontend will be available at `http://localhost:3000`
+### 1. Upload Data
+Upload CSV files with time series data (columns: `date`, `value`)
 
-3. **Build for production:**
-   ```bash
-   npm run build
-   npm run preview
-   ```
+### 2. Planning
+Chat with the planner agent to create an analysis plan:
+```
+User: "Analyze my sales data for trends and seasonality"
+Planner: Creates 7-step plan with exploratory analysis, decomposition, forecasting
+```
 
-## Usage
+### 3. Execution
+Approve plan → Execute steps one by one with **visual results**
 
-### Starting a New Analysis
+Each step generates:
+- 📝 **Narrative text** explaining findings
+- 📊 **Tables** with metrics and statistics  
+- 📈 **Interactive Plotly charts** (zoom, hover, download)
 
-1. **Launch the application** and navigate to `http://localhost:3000`
+Example Step 2 output:
 
-2. **Select your data source:**
-   - **CSV**: Provide the path to your CSV file
-   - **Database**: Provide your database ID
+```
+Step 2: Exploratory Analysis ✓
 
-3. **Describe your analysis:**
-   Enter your initial prompt describing what you want to analyze
-   Example: "I want to analyze sales trends and forecast the next quarter"
+"The time series has 365 daily observations from 2023-01-01 to 2023-12-31.
+Mean is 152.3 with std dev of 45.6, indicating moderate variability..."
 
-4. **Interact with the planner:**
-   - Ask questions about the analysis
-   - Refine the plan
-   - Request changes or clarifications
+[Table: Summary Statistics]
+| Metric    | Value |
+|-----------|-------|
+| Mean      | 152.3 |
+| Std Dev   | 45.6  |
 
-5. **View results:**
-   - See the analysis plan in the results panel
-   - View agent responses as they come in
-   - Track the conversation history in the chat
+[Interactive Plotly Chart: Time Series Plot]
+[Interactive Plotly Chart: Distribution Histogram]
+```
 
-### API Endpoints
+### 4. Results
+All steps displayed in sequence with interactive visualizations
 
-- `POST /tasks` - Create a new task
-- `POST /tasks/{task_id}/messages` - Send a message to continue conversation
-- `GET /tasks/{task_id}` - Get task details
-- `GET /tasks/{task_id}/interactions` - Get all interactions
-- `POST /tasks/{task_id}/proceed` - Mark task as ready for execution
+## 🏗️ Architecture
 
-## Project Structure
+```
+┌──────────────┐
+│ Frontend     │  React + Plotly
+│ (Port 3000)  │
+└──────┬───────┘
+       │ HTTP
+┌──────▼───────┐
+│ FastAPI      │  Python + Claude
+│ (Port 8000)  │
+└──────┬───────┘
+       │
+┌──────▼───────┐
+│ PostgreSQL   │  Task state + logs
+└──────────────┘
+
+┌──────────────────────────────────┐
+│ Workspace                        │
+│ ├── uploads/      (CSV inputs)  │
+│ └── outputs/      (Results)     │
+│     └── {task_id}/               │
+│         ├── step_1/              │
+│         │   └── *_ui.json        │
+│         ├── step_2/              │
+│         │   └── *_ui.json        │
+│         └── ...                  │
+└──────────────────────────────────┘
+```
+
+## 🤖 Agents
+
+### 1. Planner Agent
+Creates step-by-step plans through conversation
+- Tools: `view_file`, `search_files`, `get_file_stats`
+- Explores data before planning
+
+### 2. Helper Context Agent
+Enriches steps with skill assignments
+- Matches steps to available skills
+- Returns skill paths for executor
+
+### 3. Executor Agent ⭐
+Executes steps with tools and generates UI
+- Tools: `read_file`, `write_file`, `run_python`, `list_files`
+- Generates `ui.json` per step with blocks:
+  - `text` - narrative
+  - `table` - structured data
+  - `plot` - Plotly specs
+
+## 📁 Project Structure
 
 ```
 time_series_analysis_agent/
-├── agents/                    # Agent implementations
+├── agents/
 │   ├── planner_agent.py
-│   ├── translator_agent.py
+│   ├── helper_contet_agent.py
 │   └── executor_agent.py
-├── src/                       # Frontend source
-│   ├── components/
-│   │   ├── DataSourceSelector.tsx
-│   │   ├── AnalysisWorkspace.tsx
-│   │   ├── ChatInterface.tsx
-│   │   └── ResultsPanel.tsx
-│   ├── api.ts                # API client
-│   ├── types.ts              # TypeScript types
-│   ├── App.tsx               # Main app component
-│   └── main.tsx              # Entry point
-├── tests/                     # Tests
-├── main.py                    # FastAPI backend entry point
-├── requirements.txt           # Python dependencies
-├── package.json               # Node.js dependencies
-└── vite.config.ts            # Vite configuration
+├── skills/
+│   └── analyzing-time-series/
+│       ├── SKILL.md
+│       └── scripts/
+├── frontend/
+│   └── src/
+│       ├── components/
+│       │   ├── UIBlock.tsx          ⭐ NEW
+│       │   ├── StepResultPanel.tsx  ⭐ NEW
+│       │   └── ExecutionPanel.tsx   ⭐ NEW
+│       └── api.ts
+├── workspace/
+│   ├── uploads/
+│   └── outputs/
+├── docs/
+│   ├── UI_ANALYTICS_GUIDE.md        ⭐ NEW
+│   └── QUICK_SETUP_GUIDE.md         ⭐ NEW
+└── main.py
 ```
 
-## Technologies
+## 🔑 Key API Endpoints
 
-### Backend
-- **FastAPI**: Modern, fast web framework
-- **SQLAlchemy**: SQL toolkit and ORM
-- **PostgreSQL**: Relational database
-- **LangChain**: LLM orchestration
-- **OpenAI**: Language model API
+```
+POST   /uploads/csv              Upload data files
+POST   /tasks                    Create task (planning)
+POST   /tasks/{id}/messages      Continue conversation
+POST   /tasks/{id}/proceed       Approve plan
+POST   /tasks/{id}/execute/start Initialize execution
+POST   /tasks/{id}/execute/step  Execute specific step
+GET    /tasks/{id}/execute/status Check progress
+GET    /workspace/files/{path}   ⭐ Fetch generated files
+```
 
-### Frontend
-- **React 18**: UI library
-- **TypeScript**: Type-safe JavaScript
-- **Vite**: Fast build tool
-- **Tailwind CSS**: Utility-first CSS framework
-- **Axios**: HTTP client
-- **React Markdown**: Markdown rendering
-- **Lucide React**: Icon library
+## 📖 Documentation
 
-## Development
+- [UI Analytics Guide](docs/UI_ANALYTICS_GUIDE.md) - Complete visual system docs
+- [Quick Setup Guide](docs/QUICK_SETUP_GUIDE.md) - Testing and troubleshooting
+- [Executor Agent](docs/EXECUTOR_AGENT.md) - Technical details
+- [API Reference](docs/API_QUICK_REFERENCE.md) - Endpoint examples
 
-### Running Tests
+## 🧪 Testing
 
 ```bash
-# Backend tests
-pytest
+# Backend integration test
+python tests/test_executor_integration.py
 
-# Frontend tests (if configured)
-npm test
+# Jupyter notebook
+jupyter notebook tests/test_agent.ipynb
 ```
 
-### Linting
+## 💡 Example Workflow
 
-```bash
-# Frontend linting
-npm run lint
+```python
+# 1. Upload CSV
+POST /uploads/csv → files uploaded
+
+# 2. Create task
+POST /tasks {
+  "prompt": "Analyze sales trends",
+  "data_source_type": "csv",
+  "data_source_meta": {"csv_path": "data.csv"}
+}
+
+# 3. Planning conversation (optional)
+POST /tasks/{id}/messages {"prompt": "Focus on seasonality"}
+
+# 4. Approve
+POST /tasks/{id}/proceed
+
+# 5. Start execution
+POST /tasks/{id}/execute/start {"output_name": "analysis"}
+
+# 6. Execute steps
+POST /tasks/{id}/execute/step {"step_number": 1}
+# → Returns summary + generated_files: ["analysis_1_ui.json"]
+
+# 7. Frontend fetches UI
+GET /workspace/files/outputs/{task_id}/step_1/analysis_1_ui.json
+# → Returns {"blocks": [text, table, plot]}
+
+# 8. Render visualizations
+React components render interactive Plotly charts
 ```
 
-## Deployment
+## 🎨 Visual Output Example
 
-### Backend Deployment (Heroku example)
+Step executes → Backend generates:
 
-1. Create a Heroku app
-2. Add PostgreSQL addon
-3. Set environment variables
-4. Deploy:
-   ```bash
-   git push heroku main
-   ```
+```json
+{
+  "step_number": 2,
+  "title": "Exploratory Analysis",
+  "blocks": [
+    {"type": "text", "content": "Analysis narrative..."},
+    {"type": "table", "columns": [...], "rows": [...]},
+    {"type": "plot", "library": "plotly", "spec": {...}}
+  ]
+}
+```
 
-### Frontend Deployment (Vercel example)
+Frontend renders → User sees:
+```
+┌─────────────────────────────────────┐
+│ Step 2 ✓ Exploratory Analysis       │
+├─────────────────────────────────────┤
+│ [Narrative text explaining findings]│
+│                                     │
+│ [HTML table with statistics]        │
+│                                     │
+│ [Interactive Plotly chart]          │
+│  - Hover to see values              │
+│  - Zoom in/out                      │
+│  - Pan                              │
+│  - Download as PNG                  │
+└─────────────────────────────────────┘
+```
 
-1. Build the frontend:
-   ```bash
-   npm run build
-   ```
+## 🔧 Tech Stack
 
-2. Deploy the `dist/` folder to your hosting provider
+**Backend:**
+- FastAPI - REST API
+- Anthropic Claude - LLM
+- SQLAlchemy - Database ORM
+- PostgreSQL - Data persistence
+- Pandas/Plotly - Data processing
 
-3. Configure environment variables for API URL
+**Frontend:**
+- React + TypeScript
+- Plotly.js - Interactive charts
+- TailwindCSS - Styling
+- Vite - Build tool
 
-## Contributing
+## 📊 Database Schema
+
+```sql
+-- Tasks
+CREATE TABLE tasks (
+  id VARCHAR PRIMARY KEY,
+  prompt TEXT,
+  status VARCHAR,  -- planning, proceeded, executing, completed
+  data_source_type VARCHAR,
+  data_source_meta TEXT,
+  result TEXT,  -- JSON with plan + execution_state
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- Audit log
+CREATE TABLE llm_interactions (
+  id VARCHAR PRIMARY KEY,
+  task_id VARCHAR,
+  agent VARCHAR,  -- planner, executor_agent_step_N
+  prompt TEXT,
+  model_answer TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  raw_response JSONB,
+  created_at TIMESTAMP
+);
+```
+
+## 🚦 Status
+
+✅ **Production Ready** - All core features implemented
+
+Recent additions:
+- ✅ Visual analytics system (ui.json generation)
+- ✅ Interactive Plotly charts
+- ✅ Step-by-step execution panel
+- ✅ File serving endpoint
+- ✅ Complete documentation
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+2. Create feature branch
+3. Add tests
+4. Update documentation
+5. Submit PR
 
-## License
+## 📝 License
 
-MIT License - feel free to use this project for your own purposes.
+[Your License Here]
 
-## Support
+## 🙏 Acknowledgments
 
-For issues and questions, please open an issue on GitHub.
+Built with:
+- Anthropic Claude Sonnet
+- React & Plotly
+- FastAPI & SQLAlchemy
+
+---
+
+**Ready to analyze time series! 📈✨**
+
+For detailed setup and testing, see [Quick Setup Guide](docs/QUICK_SETUP_GUIDE.md)

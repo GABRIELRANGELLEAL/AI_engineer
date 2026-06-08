@@ -64,3 +64,37 @@ export interface UploadedFile {
 export interface UploadResponse {
   files: UploadedFile[];
 }
+
+export interface ExecutionState {
+  output_name: string;
+  steps: any[];
+  current_step: number;
+  completed_steps: number[];
+  last_execution?: StepExecutionResult;
+}
+
+export interface StepExecutionResult {
+  task_id: string;
+  step_number: number;
+  total_steps: number;
+  step_description: string;
+  status: 'completed' | 'error';
+  summary: string;
+  generated_files: string[];
+  all_artifacts: Record<number, string[]>;
+  next_step_ready: boolean;
+  tool_uses_count: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface ExecutionStatusResponse {
+  status: string;
+  task_id: string;
+  task_status: string;
+  total_steps: number;
+  current_step: number;
+  completed_steps: number[];
+  completed_count: number;
+  execution_state: ExecutionState;
+}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FileText, BarChart3, Play, Loader2, CheckCircle2, CheckSquare, Square } from 'lucide-react';
 import type { Message, PlanItem } from '../types';
 import { proceedTask } from '../api';
+import ExecutionPanel from './ExecutionPanel';
 
 interface Props {
   messages: Message[];
@@ -26,7 +27,7 @@ export default function ResultsPanel({
   const [buildError, setBuildError] = useState<string | null>(null);
 
   const canBuild = taskId && plan && plan.length > 0 && taskStatus === 'plan_ready';
-  const isProceeded = taskStatus === 'proceeded' || taskStatus === 'completed';
+  const isProceeded = taskStatus === 'proceeded' || taskStatus === 'executing' || taskStatus === 'completed';
 
   const handleToggleStep = (step: number) => {
     if (selectedSteps.includes(step)) {
@@ -53,10 +54,6 @@ export default function ResultsPanel({
     setBuildError(null);
     
     try {
-      // Store selected steps in localStorage to pass to execute
-      if (selectedSteps.length > 0 && plan) {
-        localStorage.setItem(`task_${taskId}_selected_steps`, JSON.stringify(selectedSteps));
-      }
       await proceedTask(taskId);
       onStatusChange('proceeded');
     } catch (err: any) {
@@ -67,8 +64,9 @@ export default function ResultsPanel({
   };
 
   return (
-    <div className="h-full p-6 space-y-6 bg-slate-900">
-      <div className="sticky top-0 bg-slate-900 pb-4 z-10">
+    <div className="h-full flex flex-col bg-slate-900">
+      {/* Header - Fixed */}
+      <div className="flex-shrink-0 p-6 border-b border-slate-700">
         <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
           <BarChart3 className="w-6 h-6 text-blue-400" />
           Results & Analysis
@@ -77,6 +75,9 @@ export default function ResultsPanel({
           View outputs, plans, and analysis results
         </p>
       </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
       {/* Plan Section */}
       {plan && plan.length > 0 && (
@@ -162,12 +163,12 @@ export default function ResultsPanel({
                 {building ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Building...
+                    Approving...
                   </>
                 ) : (
                   <>
                     <Play className="w-5 h-5" />
-                    Build {selectedSteps.length > 0 && selectedSteps.length < plan.length ? `${selectedSteps.length} Selected Step${selectedSteps.length !== 1 ? 's' : ''}` : 'Plan'}
+                    Approve Plan
                   </>
                 )}
               </button>
@@ -184,42 +185,31 @@ export default function ResultsPanel({
               </p>
             </div>
           )}
+        </div>
+      )}
 
-          {isProceeded && (
-            <div className="pt-3 border-t border-slate-700">
-              <div className="bg-green-900/30 text-green-400 px-4 py-3 rounded-lg text-sm text-center border border-green-800">
-                Plan approved and ready for execution
-              </div>
+      {/* Execution Section */}
+      {taskId && isProceeded && (
+        <ExecutionPanel
+          taskId={taskId}
+          taskStatus={taskStatus}
+          onStatusChange={onStatusChange}
+        />
+      )}
+
+        {/* Empty state when no task */}
+        {!taskId && (
+          <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-8 text-center">
+            <div className="text-slate-500">
+              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="text-slate-300">No analysis yet</p>
+              <p className="text-sm mt-1">
+                Start a conversation to create a plan
+              </p>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Visualizations Section */}
-      {taskId && (
-        <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/30 rounded-xl border border-blue-800 p-5">
-          <h3 className="font-semibold text-slate-100 mb-2 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-blue-400" />
-            Analysis Results
-          </h3>
-          <p className="text-sm text-slate-300">
-            Charts, graphs, and outputs will appear here after the plan is executed.
-          </p>
-        </div>
-      )}
-
-      {/* Empty state when no task */}
-      {!taskId && (
-        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-8 text-center">
-          <div className="text-slate-500">
-            <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p className="text-slate-300">No analysis yet</p>
-            <p className="text-sm mt-1">
-              Start a conversation to create a plan
-            </p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

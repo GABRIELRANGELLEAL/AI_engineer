@@ -68,6 +68,36 @@ export const proceedTask = async (taskId: string): Promise<{ status: string; tas
   return response.data;
 };
 
+export const startExecution = async (
+  taskId: string,
+  outputName: string
+): Promise<any> => {
+  const response = await api.post(`/tasks/${taskId}/execute/start`, {
+    output_name: outputName,
+  });
+  return response.data;
+};
+
+export const executeStep = async (
+  taskId: string,
+  stepNumber: number
+): Promise<any> => {
+  const response = await api.post(`/tasks/${taskId}/execute/step`, {
+    step_number: stepNumber,
+  });
+  return response.data;
+};
+
+export const getExecutionStatus = async (taskId: string): Promise<any> => {
+  const response = await api.get(`/tasks/${taskId}/execute/status`);
+  return response.data;
+};
+
+export const getWorkspaceFile = async (filePath: string): Promise<any> => {
+  const response = await api.get(`/workspace/files/${encodeURIComponent(filePath)}`);
+  return response.data;
+};
+
 export const executeTask = async (taskId: string, selectedSteps?: number[]): Promise<any> => {
   const response = await api.post(`/tasks/${taskId}/execute`, {
     selected_steps: selectedSteps && selectedSteps.length > 0 ? selectedSteps : null

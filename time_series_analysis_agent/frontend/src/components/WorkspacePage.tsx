@@ -124,7 +124,7 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
         </div>
 
         {/* Right Side: Results Panel */}
-        <div className="w-[45%] bg-slate-900 overflow-auto">
+        <div className="w-[50%] bg-slate-900 overflow-auto">
           <ResultsPanel 
             messages={messages} 
             plan={currentPlan}
