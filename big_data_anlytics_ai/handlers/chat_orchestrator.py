@@ -19,13 +19,23 @@ Flow:
 
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from new_structure.api_caller import ApiCaller
-from new_structure.response_handler import ResponseHandler, model_response
+from handlers.api_caller import ApiCaller
+from handlers.response_handler import ResponseHandler, model_response
+
+# Matches the failure prefix produced by handle_execute_code:
+#   "[exit code N | lang]"  or  "Execution timed out after Ns."
+_CODE_FAILURE_RE = re.compile(r"^\[exit code \d+")
+
+
+def _is_code_failure(output: str) -> bool:
+    """Return True when execute_code ran but exited with an error or timed out."""
+    return bool(_CODE_FAILURE_RE.match(output)) or output.startswith("Execution timed out")
 
 
 @dataclass
@@ -58,6 +68,7 @@ class Orchestrator:
         tools: Optional[List[Dict[str, Any]]] = None,
         thinking_budget: Optional[int] = None,
         max_iterations: int = 10,
+        max_code_retries: int = 3,
         agent_name: str = "orchestrator",
         persist: bool = True,
         db_session_factory: Optional[Any] = None,
@@ -71,6 +82,7 @@ class Orchestrator:
         self.tools = tools
         self.thinking_budget = thinking_budget
         self.max_iterations = max_iterations
+        self.max_code_retries = max_code_retries
         self.agent_name = agent_name
         self.persist = persist
         self.verbose = verbose
@@ -141,6 +153,7 @@ class Orchestrator:
         tools: Optional[List[Dict[str, Any]]] = None,
         thinking_budget: Optional[int] = None,
         max_iterations: Optional[int] = None,
+        max_code_retries: Optional[int] = None,
         persist: Optional[bool] = None,
     ) -> RunResult:
         """
@@ -177,6 +190,8 @@ class Orchestrator:
             "thinking_budget": thinking_budget or self.thinking_budget,
         }
         limit = max_iterations if max_iterations is not None else self.max_iterations
+        retry_limit = max_code_retries if max_code_retries is not None else self.max_code_retries
+        code_retry_count = 0
 
         # ── Turn 0: first API call ──────────────────────────────────────
         self._log(f"[run={run_id}] turn 0 — first call...")
@@ -206,6 +221,28 @@ class Orchestrator:
 
             # IDs of tool calls requested in *this* turn only
             current_tool_ids = {b.id for b in response.content if b.type == "tool_use"}
+
+            # ── Code-execution retry guard ──────────────────────────────
+            failed_executions = [
+                b for b in state.output_messages
+                if b.get("type") == "tool_result"
+                and b.get("tool_name") == "execute_code"
+                and b.get("tool_use_id") in current_tool_ids
+                and _is_code_failure(b.get("content", ""))
+            ]
+            if failed_executions:
+                code_retry_count += 1
+                self._log(
+                    f"[run={run_id}] execute_code failed "
+                    f"(attempt {code_retry_count}/{retry_limit})"
+                )
+                if code_retry_count > retry_limit:
+                    state.stop_reason = "max_code_retries"
+                    self._log(
+                        f"[run={run_id}] max_code_retries ({retry_limit}) exceeded — stopping"
+                    )
+                    break
+            # ────────────────────────────────────────────────────────────
 
             messages.append({"role": "assistant", "content": response.content})
             messages.append({

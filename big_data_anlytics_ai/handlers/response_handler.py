@@ -45,7 +45,7 @@ class ResponseHandler:
     def tool_executor(self):
         """Lazy fallback: usa agents.tools.execute_tool se nenhum executor foi injetado."""
         if self._tool_executor is None:
-            from agents.tools import execute_tool
+            from handlers.tools import execute_tool
             self._tool_executor = execute_tool
         return self._tool_executor
 

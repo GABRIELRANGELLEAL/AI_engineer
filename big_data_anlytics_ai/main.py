@@ -14,40 +14,18 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from dotenv import load_dotenv
-
-from models import Base, Task, LlmInteraction
-from agents.planner_agent import (
-    planner_agent_file,
-    build_conversation_history
-)
-from agents.executor_orchestrator import executor_orchestrator
-
-# === Environment setup ===
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set in environment")
-
-# Fix for Heroku's postgres:// URL format
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+from sqlalchemy.orm import Session
+from models import Task, LlmInteraction
+from database import get_db
+from routers import auth as auth_router
+from routers import workspaces as workspaces_router
+from routers import data_connections as data_connections_router
 
 # === Workspace setup ===
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE_DIR = BASE_DIR / "workspace"
 UPLOADS_DIR = WORKSPACE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-
-# === Database setup ===
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-# Create tables (no drop_all)
-Base.metadata.create_all(bind=engine)
 
 # === FastAPI setup ===
 app = FastAPI(title="Time Series Analysis Agent API")
@@ -61,14 +39,9 @@ app.add_middleware(
 )
 
 
-# === Dependencies ===
-def get_db():
-    """Database session dependency."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+app.include_router(auth_router.router)
+app.include_router(workspaces_router.router)
+app.include_router(data_connections_router.router)
 
 
 # === Pydantic schemas ===
@@ -178,6 +151,8 @@ def _run_planner_and_save(
     Returns:
         parsed response dict with answer and plan
     """
+    from agents.planner_agent import planner_agent_file
+
     # Extract input files from data source metadata
     data_source_meta = json.loads(task.data_source_meta)
     print(f"[DEBUG] data_source_meta: {data_source_meta}")
@@ -397,6 +372,8 @@ def send_message(
         task.updated_at = datetime.utcnow()
         db.commit()
     
+    from agents.planner_agent import build_conversation_history
+
     # Load conversation history (planner only — executor prompts are technical)
     interactions = (
         db.query(LlmInteraction)
@@ -679,6 +656,8 @@ def execute_step(task_id: str, request: ExecuteStepRequest, db: Session = Depend
         )
     
     try:
+        from agents.executor_orchestrator import executor_orchestrator
+
         # Execute step
         print(f"[DEBUG] Executing step {step_number} for task {task_id}")
         
