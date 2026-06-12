@@ -21,3 +21,17 @@ Wait for both services to be ready:
 
 **API docs:**
 Open http://127.0.0.1:8000/docs in your browser
+
+All stopped containers:
+```bash
+docker container prune -f
+```
+All unused images, networks, and build cache:
+```bash
+docker system prune -a
+```
+Everything including volumes (deletes DB data, etc.):
+
+```bash
+docker system prune -a --volumes
+```

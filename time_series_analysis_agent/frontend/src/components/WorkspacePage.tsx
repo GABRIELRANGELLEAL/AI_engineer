@@ -41,7 +41,6 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
     if (status) {
       setTaskStatus(status);
     }
-    // Select all steps whenever the plan is created or updated
     setSelectedSteps(plan.length > 0 ? plan.map((item) => item.step) : []);
   };
 
@@ -60,110 +59,162 @@ export default function WorkspacePage({ dataSourceType, onBack }: Props) {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ background: 'var(--bg-page)' }}
+    >
       {/* Header */}
-      <header className="bg-slate-900 shadow-lg border-b border-slate-800">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-slate-100">
-              Time Series Analysis Agent
-            </h1>
-            <span className="px-3 py-1 bg-blue-600 text-blue-100 text-sm font-medium rounded-full">
-              {dataSourceType.toUpperCase()}
-            </span>
-            {taskId && (
-              <span className="text-sm text-slate-400">
-                Task: {taskId.slice(0, 8)}...
-              </span>
-            )}
-          </div>
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 px-4 py-2 text-slate-300 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition"
+      <header
+        className="flex-shrink-0 h-12 flex items-center justify-between px-4"
+        style={{
+          background: 'var(--bg-sidebar)',
+          borderBottom: '0.5px solid var(--border)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          {/* Orange accent logo */}
+          <div
+            className="w-5 h-5 rounded-sm flex-shrink-0"
+            style={{ background: 'var(--accent)' }}
+          />
+          <span className="text-[14px] font-medium leading-none" style={{ color: 'var(--text-main)' }}>
+            Time Series Analysis Agent
+          </span>
+          <span
+            className="text-[11px] font-medium uppercase tracking-wider"
+            style={{ color: 'var(--text-muted)' }}
           >
-            <ArrowLeft className="w-5 h-5" />
-            Back to Sources
-          </button>
+            {dataSourceType}
+          </span>
+          {taskId && (
+            <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              {taskId.slice(0, 8)}
+            </span>
+          )}
         </div>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 px-3 h-7 text-[13px] rounded-md transition-colors"
+          style={{
+            color: 'var(--text-secondary)',
+            border: '0.5px solid var(--border)',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface2)';
+            (e.currentTarget as HTMLElement).style.color = 'var(--text-main)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'transparent';
+            (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+          }}
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back
+        </button>
       </header>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Upper pane: chat + plan/execution controls (fixed height when results exist) */}
+        {/* Upper pane: chat (60%) + plan panel (40%) */}
         <div
           className={`flex min-h-0 overflow-hidden ${
             hasStepResults ? 'h-[50vh] shrink-0' : 'flex-1'
           }`}
         >
-          {/* Left Side: Upload + Chat */}
-          <div className="flex-1 flex flex-col min-h-0 border-r border-slate-800 bg-slate-900">
-          {/* File Upload Zone (CSV only, shown before task created) */}
-          {dataSourceType === 'csv' && !taskId && (
-            <div className="p-4 border-b border-slate-800 bg-slate-900">
-              <FileUploadZone
-                onFilesUploaded={handleFilesUploaded}
-                uploadedFiles={uploadedFiles}
-                onRemoveFile={handleRemoveFile}
-              />
-            </div>
-          )}
-
-          {/* Uploaded Files Summary (CSV only, after task created) */}
-          {dataSourceType === 'csv' && taskId && uploadedFiles.length > 0 && (
-            <div className="p-3 border-b border-slate-800 bg-blue-900/30">
-              <div className="flex items-center gap-2 text-sm text-blue-300">
-                <Upload className="w-4 h-4" />
-                <span className="font-medium">
-                  {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''} uploaded
-                </span>
+          {/* Left Side: Upload + Chat — 60% */}
+          <div
+            className="flex flex-col min-h-0"
+            style={{
+              width: '60%',
+              background: 'var(--bg-page)',
+              borderRight: '0.5px solid var(--border)',
+            }}
+          >
+            {/* File Upload Zone (CSV only, before task created) */}
+            {dataSourceType === 'csv' && !taskId && (
+              <div
+                className="p-4"
+                style={{ borderBottom: '0.5px solid var(--border)' }}
+              >
+                <FileUploadZone
+                  onFilesUploaded={handleFilesUploaded}
+                  uploadedFiles={uploadedFiles}
+                  onRemoveFile={handleRemoveFile}
+                />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Database Placeholder */}
-          {dataSourceType === 'database' && !taskId && (
-            <div className="p-6 border-b border-slate-800 bg-slate-900">
-              <div className="text-center py-8">
-                <div className="text-slate-300 mb-2">Database connection</div>
-                <div className="text-sm text-slate-500">
-                  Coming soon - database integration is under development
+            {/* Uploaded Files Summary (CSV only, after task created) */}
+            {dataSourceType === 'csv' && taskId && uploadedFiles.length > 0 && (
+              <div
+                className="px-4 py-2"
+                style={{ borderBottom: '0.5px solid var(--border)' }}
+              >
+                <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>
+                    {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''} uploaded
+                  </span>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Chat Interface */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <ChatInterface
+            {/* Database Placeholder */}
+            {dataSourceType === 'database' && !taskId && (
+              <div
+                className="px-4 py-6 text-center"
+                style={{ borderBottom: '0.5px solid var(--border)' }}
+              >
+                <div className="text-[14px] mb-1" style={{ color: 'var(--text-secondary)' }}>
+                  Database connection
+                </div>
+                <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  Coming soon — database integration is under development
+                </div>
+              </div>
+            )}
+
+            {/* Chat Interface */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ChatInterface
+                taskId={taskId}
+                uploadedFiles={uploadedFiles}
+                dataSourceType={dataSourceType}
+                taskStatus={taskStatus}
+                onTaskCreated={handleTaskCreated}
+                onNewMessage={handleNewMessage}
+                onPlanUpdate={handlePlanUpdate}
+              />
+            </div>
+          </div>
+
+          {/* Right Side: Results Panel — 40% */}
+          <div
+            className="min-h-0 overflow-hidden"
+            style={{ width: '40%', background: 'var(--bg-sidebar)' }}
+          >
+            <ResultsPanel
+              messages={messages}
+              plan={currentPlan}
               taskId={taskId}
-              uploadedFiles={uploadedFiles}
-              dataSourceType={dataSourceType}
               taskStatus={taskStatus}
-              onTaskCreated={handleTaskCreated}
-              onNewMessage={handleNewMessage}
-              onPlanUpdate={handlePlanUpdate}
+              onStatusChange={setTaskStatus}
+              selectedSteps={selectedSteps}
+              onStepsChange={setSelectedSteps}
+              onStepResultsChange={handleStepResultsChange}
             />
           </div>
         </div>
 
-        {/* Right Side: Results Panel (plan + execution controls) */}
-        <div className="w-[50%] min-h-0 overflow-hidden bg-slate-900">
-          <ResultsPanel
-            messages={messages}
-            plan={currentPlan}
-            taskId={taskId}
-            taskStatus={taskStatus}
-            onStatusChange={setTaskStatus}
-            selectedSteps={selectedSteps}
-            onStepsChange={setSelectedSteps}
-            onStepResultsChange={handleStepResultsChange}
-          />
-        </div>
-        </div>
-
         {/* Full-width step results */}
         {hasStepResults && taskId && (
-          <div className="flex-1 min-h-0 overflow-y-auto border-t border-slate-700 bg-slate-950 w-full">
+          <div
+            className="flex-1 min-h-0 overflow-y-auto w-full"
+            style={{
+              borderTop: '0.5px solid var(--border)',
+              background: 'var(--bg-page)',
+            }}
+          >
             <StepResultsSection
               stepResults={stepResults}
               completedSteps={completedSteps}

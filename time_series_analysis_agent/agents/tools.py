@@ -5,12 +5,13 @@ All tools live in TOOLS (schema + handler). Agents pick subsets via AGENT_TOOL_S
 Use to_anthropic_tools() or to_openai_tools() with a list of tool names.
 """
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Literal
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-WORKSPACE = BASE_DIR / "workspace"
+WORKSPACE = Path(os.getenv("WORKSPACE_DIR", str(BASE_DIR / "workspace")))
 
 Provider = Literal["anthropic", "openai"]
 
@@ -72,6 +73,11 @@ def handle_search_files(pattern: str) -> str:
 
     except Exception as e:
         return f"Error searching files: {str(e)}"
+
+
+def handle_finish_loop(summary: str) -> str:
+    """Signal that the agentic loop is complete and return the final response."""
+    return summary
 
 
 def handle_get_file_stats(path: str) -> str:
@@ -163,6 +169,23 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
         "handler": handle_get_file_stats,
     },
+    "finish_loop": {
+        "description": (
+            "Call when the task is fully complete. "
+            "This ends the agentic loop and delivers the final response to the user."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Final response or summary for the user",
+                }
+            },
+            "required": ["summary"],
+        },
+        "handler": handle_finish_loop,
+    },
 }
 
 
@@ -192,6 +215,7 @@ def to_openai_tools(tool_names: list[str]) -> list[dict]:
         for name in tool_names
     ]
 
+# this part of the code is used when you need to execute a tool
 def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> str:
     """Execute a tool safely with error handling."""
     if tool_name not in TOOLS:
