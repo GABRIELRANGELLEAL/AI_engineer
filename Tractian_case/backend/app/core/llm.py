@@ -35,7 +35,7 @@ class OpenAILLMProvider:
 
     def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
         from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.client = AsyncOpenAI(api_key=api_key, timeout=30.0)
         self.name = "openai"
         self.model = model
 
@@ -66,7 +66,7 @@ class AnthropicLLMProvider:
 
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         from anthropic import AsyncAnthropic
-        self.client = AsyncAnthropic(api_key=api_key)
+        self.client = AsyncAnthropic(api_key=api_key, timeout=30.0)
         self.name = "anthropic"
         self.model = model
 

@@ -5,6 +5,10 @@ export default function SetupPage({ onComplete }) {
   const [status, setStatus] = useState(null) // null | 'loading' | 'valid' | 'error'
   const [errorMsg, setErrorMsg] = useState('')
 
+  const [anthropicKey, setAnthropicKey] = useState('')
+  const [anthropicStatus, setAnthropicStatus] = useState(null)
+  const [anthropicError, setAnthropicError] = useState('')
+
   async function handleTest() {
     if (!key.trim()) return
     setStatus('loading')
@@ -31,8 +35,34 @@ export default function SetupPage({ onComplete }) {
     }
   }
 
+  async function handleTestAnthropic() {
+    if (!anthropicKey.trim()) return
+    setAnthropicStatus('loading')
+    setAnthropicError('')
+
+    try {
+      const res = await fetch('/validate-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anthropic_key: anthropicKey }),
+      })
+      const data = await res.json()
+      const result = data.anthropic
+
+      if (result?.valid) {
+        setAnthropicStatus('valid')
+      } else {
+        setAnthropicStatus('error')
+        setAnthropicError(result?.message || 'Validation failed')
+      }
+    } catch {
+      setAnthropicStatus('error')
+      setAnthropicError('Could not connect to server')
+    }
+  }
+
   function handleContinue() {
-    onComplete({ openaiKey: key, anthropicKey: null })
+    onComplete({ openaiKey: key, anthropicKey: anthropicKey || null })
   }
 
   return (
@@ -68,6 +98,36 @@ export default function SetupPage({ onComplete }) {
         {status === 'error' && (
           <p className="text-red-600 text-sm mt-2">{errorMsg}</p>
         )}
+
+        <div className="border-t border-gray-200 mt-6 pt-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Anthropic API Key <span className="text-gray-400 font-normal">(opcional)</span>
+          </label>
+          <p className="text-xs text-gray-400 mb-3">Usado como fallback caso a OpenAI falhe</p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={anthropicKey}
+              onChange={(e) => { setAnthropicKey(e.target.value); setAnthropicStatus(null) }}
+              placeholder="sk-ant-..."
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <button
+              onClick={handleTestAnthropic}
+              disabled={!anthropicKey.trim() || anthropicStatus === 'loading'}
+              className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {anthropicStatus === 'loading' ? '...' : 'Test'}
+            </button>
+          </div>
+
+          {anthropicStatus === 'valid' && (
+            <p className="text-green-600 text-sm mt-2">Valid key</p>
+          )}
+          {anthropicStatus === 'error' && (
+            <p className="text-red-600 text-sm mt-2">{anthropicError}</p>
+          )}
+        </div>
 
         <button
           onClick={handleContinue}

@@ -12,7 +12,7 @@ from app.api.dependencies import (
 )
 from app.core.embedding import EmbeddingProvider
 from app.core.extraction import _detect_language
-from app.core.llm import LLMProviderType, answer_question
+from app.core.llm import LLMProviderType, LLMError, answer_question
 from app.core.retrieval import retrieve_bilingual
 from app.core.translation import translate_question
 from app.store.vector_store import VectorStore
@@ -117,11 +117,15 @@ async def ask_question(
             i, c.filename, c.page_number, c.text[:150],
         )
 
-    llm_response = await answer_question(
-        question=body.question,
-        chunks=chunks_for_llm,
-        provider=llm_provider,
-    )
+    try:
+        llm_response = await answer_question(
+            question=body.question,
+            chunks=chunks_for_llm,
+            provider=llm_provider,
+        )
+    except LLMError as e:
+        logger.error("action=llm_failed | error=%s", e)
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
 
     total_time_ms = int((time.monotonic() - total_start) * 1000)
 

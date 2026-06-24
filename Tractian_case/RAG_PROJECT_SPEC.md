@@ -1,75 +1,100 @@
-# Especificação Completa — Sistema RAG para Q&A sobre PDFs
+# RAG PDF Q&A System — Technical Specification v2
 
-## Contexto
-
-Construir um sistema que permite usuários fazerem upload de documentos PDF e depois fazerem perguntas sobre o conteúdo. O sistema deve extrair informações dos documentos, armazená-las para busca eficiente via embeddings, e usar um LLM para responder perguntas com precisão.
-
-Este é um case técnico avaliado nos critérios: Functionality, Retrieval, LLM Use, Code Quality, API Design e Developer UX.
+Accurate specification reflecting the current implementation as of 2026-06-24.
 
 ---
 
-## Stack Tecnológica
+## Context
 
-| Componente | Tecnologia | Justificativa |
-|---|---|---|
-| Framework Web | FastAPI | Async nativo, tipagem Pydantic, docs Swagger automáticas, suporta multipart/form-data e JSON nativamente |
-| Extração de PDF | PyMuPDF (fitz) | Implementado em C (rápido), preserva ordem de leitura, metadata por página (número, dimensões) |
-| Chunking | Implementação própria | Chunking semântico: respeita fronteiras de parágrafo/seção, com fallback para quebra por tamanho + overlap |
-| Embeddings | OpenAI text-embedding-3-small (primário), sentence-transformers all-MiniLM-L6-v2 (fallback local) | Interface abstrata permite trocar provedor sem mudar código |
-| Vector Store | ChromaDB | Roda in-process, persiste em disco, armazena metadata junto dos vetores, sem infra externa |
-| LLM | OpenAI gpt-4o-mini (primário), Anthropic Claude Sonnet (fallback) | Fallback automático em caso de erro 429/500 |
-| Frontend | React + Tailwind CSS | Servido como estático pelo FastAPI, sem servidor separado |
-| Infra | Docker + Docker Compose + Makefile | Setup em um comando, experiência do avaliador otimizada |
+A system that allows users to upload PDF documents and ask questions about their contents. It extracts information from documents, stores it for efficient retrieval via embeddings, and uses an LLM to answer questions accurately.
+
+This is a technical challenge for Tractian, evaluated on: **Functionality**, **Retrieval**, **LLM Use**, **Code Quality**, **API Design**, and **Developer UX**.
 
 ---
 
-## Arquitetura de Módulos
+## Technology Stack
+
+| Component | Technology | Version | Justification |
+|---|---|---|---|
+| Web Framework | FastAPI | 0.115.6 | Native async, Pydantic typing, automatic Swagger docs, supports multipart/form-data and JSON |
+| PDF Extraction | PyMuPDF (fitz) | 1.25.5 | C-based (fast), preserves reading order, per-page metadata |
+| Chunking | Custom implementation | — | Semantic chunking: respects paragraph/section boundaries, with fallback to size + overlap |
+| Embeddings | OpenAI `text-embedding-3-small` | openai 1.59.6 | 1536-dim vectors, async client with exponential-backoff retry, batching |
+| Vector Store | ChromaDB | 0.6.3 | In-process, persists to disk, stores metadata alongside vectors, cosine similarity |
+| LLM (primary) | OpenAI `gpt-4o-mini` | — | Low-latency, cost-effective for RAG answers |
+| LLM (fallback) | Anthropic `claude-sonnet-4-6` | anthropic 0.43.0 | Automatic fallback on primary failure |
+| Frontend | React 19 + Tailwind CSS 4 + Vite 8 | — | Served as static files by FastAPI |
+| Logging | structlog | 24.4.0 | Structured log output |
+| Settings | pydantic-settings | 2.7.0 | Environment-based configuration |
+| Infrastructure | Docker + Docker Compose | — | Single-command setup, multi-stage build |
+
+---
+
+## Architecture
 
 ```
 project-root/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                  ← entry point FastAPI, monta rotas e serve frontend estático
-│   │   ├── config.py                ← settings via pydantic-settings + variáveis de ambiente
+│   │   ├── main.py                  ← FastAPI entry point, mounts routes and serves static frontend
+│   │   ├── config.py                ← Settings via pydantic-settings + env vars
 │   │   ├── api/
 │   │   │   ├── routes/
-│   │   │   │   ├── documents.py     ← POST /documents (upload e indexação de PDFs)
-│   │   │   │   ├── question.py      ← POST /question (pergunta e resposta)
-│   │   │   │   ├── keys.py          ← POST /validate-keys (validação de API keys)
-│   │   │   │   └── stats.py         ← GET /stats (métricas agregadas)
-│   │   │   └── dependencies.py      ← injeção de dependências (providers, store)
+│   │   │   │   ├── documents.py     ← POST /documents (PDF upload and indexing)
+│   │   │   │   ├── question.py      ← POST /question (question and answer)
+│   │   │   │   ├── keys.py          ← POST /validate-keys (API key validation)
+│   │   │   │   └── stats.py         ← GET /stats (aggregated metrics)
+│   │   │   └── dependencies.py      ← Dependency injection (providers, store, API keys from headers)
 │   │   ├── core/
-│   │   │   ├── extraction.py        ← lê PDFs com PyMuPDF, retorna texto + metadata por página
-│   │   │   ├── chunking.py          ← chunking semântico com fallback para tamanho + overlap
-│   │   │   ├── embedding.py         ← interface abstrata + implementações OpenAI e sentence-transformers
-│   │   │   ├── retrieval.py         ← busca no vector store, retorna top-k chunks rankeados
-│   │   │   └── llm.py               ← interface abstrata + implementações OpenAI e Anthropic + fallback
-│   │   └── store/
-│   │       └── vector_store.py      ← wrapper do ChromaDB (indexação, busca, listagem)
+│   │   │   ├── extraction.py        ← PDF text extraction + language detection + header/footer removal
+│   │   │   ├── chunking.py          ← Semantic chunking with overlap
+│   │   │   ├── embedding.py         ← OpenAI embedding provider with retry and batching
+│   │   │   ├── retrieval.py         ← Hybrid retrieval: semantic (ChromaDB) + keyword (BM25) with RRF fusion
+│   │   │   ├── translation.py       ← Question translation for bilingual retrieval (gpt-4o-mini)
+│   │   │   └── llm.py               ← OpenAI + Anthropic providers, fallback logic, prompt construction, citation parsing
+│   │   ├── store/
+│   │   │   └── vector_store.py      ← ChromaDB wrapper (indexing, search, listing, stats, delete)
+│   │   └── tests/
+│   │       ├── test_extraction.ipynb
+│   │       ├── test_chunking.ipynb
+│   │       ├── test_embedding.ipynb
+│   │       └── test_llm.ipynb
+│   ├── static/                      ← Built frontend files (copied by Docker)
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                  ← roteamento interno entre telas (estado, não React Router)
-│   │   ├── pages/
-│   │   │   ├── SetupPage.jsx        ← tela de configuração de API keys
-│   │   │   └── MainPage.jsx         ← tela principal (upload + chat)
-│   │   ├── components/
-│   │   │   ├── KeyInput.jsx         ← campo de API key com botão testar e feedback visual
-│   │   │   ├── FileUpload.jsx       ← área de drag-and-drop para PDFs com progresso
-│   │   │   ├── DocumentList.jsx     ← lista de documentos indexados (sidebar)
-│   │   │   ├── ChatWindow.jsx       ← histórico de perguntas e respostas
-│   │   │   ├── ChatInput.jsx        ← campo de texto + botão enviar
-│   │   │   └── References.jsx       ← cards colapsáveis com trechos de referência
-│   │   └── index.css                ← Tailwind imports
+│   │   ├── App.jsx                  ← State-based routing between SetupPage and MainPage
+│   │   ├── main.jsx                 ← React entry point
+│   │   ├── index.css                ← Tailwind imports
+│   │   └── pages/
+│   │       ├── SetupPage.jsx        ← API key configuration screen (OpenAI only)
+│   │       └── MainPage.jsx         ← Main screen: sidebar (upload + doc list) + chat area
 │   ├── package.json
-│   └── tailwind.config.js
-├── Dockerfile
+│   └── index.html
+├── pdf_documents/                   ← Sample PDFs for testing (WEG motor manuals)
+├── Dockerfile                       ← Multi-stage: node build → python runtime
 ├── docker-compose.yml
-├── Makefile
-├── .env.example
-├── .gitignore
-└── README.md
+├── DOCKER.md                        ← Docker setup instructions
+├── .dockerignore
+└── .env                             ← Environment variables (not committed)
 ```
+
+---
+
+## Configuration (config.py)
+
+All settings are loaded from environment variables via pydantic-settings, with these defaults:
+
+| Setting | Default | Description |
+|---|---|---|
+| `chunk_size` | 512 | Target maximum tokens per chunk |
+| `chunk_overlap` | 50 | Overlap tokens between consecutive chunks |
+| `top_k` | 5 | Number of final results returned to LLM |
+| `llm_model_openai` | `gpt-4o-mini` | OpenAI model for answer generation |
+| `llm_model_anthropic` | `claude-sonnet-4-6` | Anthropic model for fallback |
+| `embedding_model` | `text-embedding-3-small` | OpenAI embedding model |
+| `chroma_persist_dir` | `./data/chromadb` | ChromaDB persistence directory |
+| `log_level` | `INFO` | Logging level |
 
 ---
 
@@ -77,7 +102,7 @@ project-root/
 
 ### POST /validate-keys
 
-Valida as API keys informadas pelo usuário. Tenta uma chamada mínima a cada API (listar modelos ou chamada de teste).
+Validates API keys by making minimal test calls (list models for OpenAI, send a 1-token message for Anthropic).
 
 **Request:**
 ```json
@@ -86,10 +111,9 @@ Valida as API keys informadas pelo usuário. Tenta uma chamada mínima a cada AP
   "anthropic_key": "sk-ant-..."
 }
 ```
-- `openai_key`: obrigatória (usada para embeddings + LLM primário)
-- `anthropic_key`: opcional (usada como fallback de LLM)
+Both fields are optional, but at least one must be provided.
 
-**Response:**
+**Response (success):**
 ```json
 {
   "openai": { "valid": true, "message": "Conectado com sucesso" },
@@ -97,21 +121,23 @@ Valida as API keys informadas pelo usuário. Tenta uma chamada mínima a cada AP
 }
 ```
 
-Em caso de falha:
+**Response (failure):**
 ```json
 {
   "openai": { "valid": false, "message": "API key inválida ou sem permissão" },
-  "anthropic": { "valid": false, "message": "Não fornecida" }
+  "anthropic": null
 }
 ```
 
+---
+
 ### POST /documents
 
-Upload e indexação de PDFs.
+Upload and index PDFs. Requires `X-OpenAI-Key` header for embedding generation.
 
 **Request:**
-- Content-Type: multipart/form-data
-- Body: um ou mais PDFs no campo `files`
+- Content-Type: `multipart/form-data`
+- Body: one or more PDFs under the field `files`
 - Headers: `X-OpenAI-Key: sk-...`
 
 **Response:**
@@ -122,24 +148,26 @@ Upload e indexação de PDFs.
   "total_chunks": 128,
   "details": [
     {
-      "filename": "manual_motor.pdf",
+      "filename": "motor_manual.pdf",
       "pages": 15,
       "chunks": 72,
-      "processing_time_ms": 3400
-    },
-    {
-      "filename": "especificacoes.pdf",
-      "pages": 8,
-      "chunks": 56,
-      "processing_time_ms": 2100
+      "processing_time_ms": 3400,
+      "detected_language": "pt"
     }
   ]
 }
 ```
 
+**Error cases:**
+- 400 if no files provided
+- 400 if file is not a PDF
+- 401 if `X-OpenAI-Key` header is missing
+
+---
+
 ### POST /question
 
-Faz uma pergunta sobre os documentos indexados.
+Ask a question about indexed documents. Uses bilingual retrieval (translates the question to the other language for broader recall).
 
 **Request:**
 ```json
@@ -147,7 +175,7 @@ Faz uma pergunta sobre os documentos indexados.
   "question": "What is the power consumption of the motor?"
 }
 ```
-- Headers: `X-OpenAI-Key: sk-...`, `X-Anthropic-Key: sk-ant-...` (opcional)
+- Headers: `X-OpenAI-Key: sk-...` (required), `X-Anthropic-Key: sk-ant-...` (optional, enables fallback)
 
 **Response:**
 ```json
@@ -156,7 +184,7 @@ Faz uma pergunta sobre os documentos indexados.
   "references": [
     {
       "text": "the motor xxx has requires 2.3kw to operate at a 60hz line frequency",
-      "document": "manual_motor.pdf",
+      "document": "motor_manual.pdf",
       "page": 3,
       "similarity_score": 0.92
     }
@@ -167,32 +195,40 @@ Faz uma pergunta sobre os documentos indexados.
     "retrieval_time_ms": 45,
     "llm_time_ms": 1230,
     "total_time_ms": 1320,
-    "confidence": "high"
+    "confidence": "high",
+    "query_language_used": "bilingual"
   }
 }
 ```
 
+**Error cases:**
+- 400 if no documents indexed yet
+- 401 if no API key header provided
+
+---
+
 ### GET /stats
 
-Métricas agregadas do sistema.
+Returns aggregated metrics from the vector store.
 
 **Response:**
 ```json
 {
   "documents_indexed": 5,
   "total_chunks": 312,
-  "questions_answered": 23,
-  "average_latency_ms": 1450,
-  "provider_usage": {
-    "openai": 21,
-    "anthropic": 2
-  }
+  "chunks_per_document": {
+    "motor_manual.pdf": 72,
+    "specs.pdf": 56
+  },
+  "documents": ["motor_manual.pdf", "specs.pdf"]
 }
 ```
 
+---
+
 ### GET /health
 
-Healthcheck para Docker.
+Healthcheck for Docker.
 
 **Response:**
 ```json
@@ -203,235 +239,263 @@ Healthcheck para Docker.
 
 ---
 
-## Implementação Detalhada por Módulo
+## Module Implementation Details
 
 ### extraction.py
 
-- Usar PyMuPDF (fitz) para extrair texto de cada página do PDF
-- Retornar uma lista de objetos com: `page_number`, `text`, `filename`
-- Limpar o texto: normalizar espaços, remover headers/footers repetidos se detectados
-- Tratar PDFs sem texto extraível (escaneados) retornando aviso ao usuário
+**Input:** Raw PDF bytes + filename.
+**Output:** `ExtractionResult` with per-page text, metadata, and detected language.
+
+**Pipeline:**
+1. Open PDF with PyMuPDF (`fitz.open`) from raw bytes
+2. Extract raw text from every page (`page.get_text("text")`)
+3. If no extractable text across all pages → return result with `has_extractable_text=False` and a warning about scanned PDFs
+4. **Header/footer detection:** count line occurrences across pages; lines appearing on >60% of pages (and >2 absolute occurrences) are flagged as headers/footers. Skipped for documents with <3 pages
+5. **Text cleaning:** remove flagged header/footer lines, collapse runs of spaces/tabs, collapse 3+ consecutive newlines to paragraph breaks
+6. **Language detection:** heuristic based on stop-word frequency (PT vs EN word lists) + diacritic boost (ã, õ, ç, etc.) from a 500-word sample. Returns `"pt"` or `"en"`
+
+**Key data classes:**
+- `PageContent(page_number, text, filename)` — 1-based page index
+- `ExtractionResult(pages, filename, total_pages, has_extractable_text, warning, detected_language)`
+
+---
 
 ### chunking.py
 
-- Implementar chunking semântico com a seguinte hierarquia de separação:
-  1. Primeiro tentar quebrar por `\n\n` (parágrafos/seções)
-  2. Depois por `\n` (quebras de linha)
-  3. Depois por `. ` (sentenças)
-  4. Por último por caractere (último recurso)
-- Parâmetros configuráveis via config: `CHUNK_SIZE=512` tokens, `CHUNK_OVERLAP=50` tokens
-- Se um parágrafo for menor que um mínimo (ex: 50 tokens), agrupar com o próximo
-- Cada chunk deve carregar metadata: `filename`, `page_number`, `chunk_index`, `text`
-- Implementar sem dependência do LangChain — código próprio mostra mais entendimento
+**Input:** List of `PageContent` objects from extraction.
+**Output:** Flat list of `Chunk` objects with monotonically increasing `chunk_index`.
+
+**Algorithm:**
+1. **Recursive splitting** with separator hierarchy:
+   - `\n\n` (paragraphs/sections)
+   - `\n` (line breaks)
+   - `. ` (sentences)
+   - ` ` (words)
+   - Character-level (last resort, splits at `chunk_size * 4` chars)
+2. **Small segment merging:** segments below `MIN_CHUNK_TOKENS=50` are concatenated with the next segment
+3. **Overlap assembly:** segments accumulate into chunks; when a chunk would exceed `CHUNK_SIZE=512` tokens, it's emitted and the tail segments fitting within `CHUNK_OVERLAP=50` tokens carry over to the next chunk
+4. Each page is processed independently (preserves correct `page_number` per chunk)
+
+**Token estimation:** `len(text) // 3.5` (heuristic optimized for mixed PT/EN text).
+
+**Data class:** `Chunk(text, filename, page_number, chunk_index)`
+
+---
 
 ### embedding.py
 
-- Interface abstrata `EmbeddingProvider` com método `embed(texts: list[str]) -> list[list[float]]`
-- Implementação `OpenAIEmbeddingProvider`: usa `text-embedding-3-small`, vetores de 1536 dimensões
-- Implementação `LocalEmbeddingProvider`: usa `sentence-transformers/all-MiniLM-L6-v2`, vetores de 384 dimensões
-- O provider é escolhido com base na disponibilidade de API key
-- Processar embeddings em batch para eficiência (a API da OpenAI aceita listas de textos)
+**Provider:** `OpenAIEmbeddingProvider` only (local sentence-transformers provider is commented out).
+
+**Behavior:**
+- Uses `text-embedding-3-small` → 1536-dimensional vectors
+- Async client with 30s timeout
+- Exponential-backoff retry (up to 3 attempts) on `RateLimitError`, `APITimeoutError`, `APIConnectionError`
+- Input texts truncated to ~6150 words before embedding (headroom below the 8191-token hard limit)
+- Empty/whitespace texts replaced with zero vectors in output
+
+**Batching:** `embed_chunks_in_batches()` sends texts in batches of 100 to stay within per-request token limits.
+
+**Factory:** `get_embedding_provider(openai_key)` → always returns `OpenAIEmbeddingProvider`.
+
+---
 
 ### vector_store.py
 
-- Wrapper sobre ChromaDB com métodos:
-  - `add_documents(chunks: list[Chunk], embeddings: list[list[float]])` — indexa chunks com metadata
-  - `search(query_embedding: list[float], top_k: int = 5) -> list[SearchResult]` — busca por similaridade coseno
-  - `list_documents() -> list[str]` — lista documentos indexados
-  - `get_stats() -> dict` — retorna contagens e métricas
-- Persistir dados em disco (diretório configurável, default `/app/data/chromadb`)
-- Armazenar junto de cada embedding: texto do chunk, filename, page_number, chunk_index
+ChromaDB wrapper with cosine similarity (`hnsw:space: cosine`).
 
-### retrieval.py
+**Methods:**
+| Method | Description |
+|---|---|
+| `add_documents(chunks, embeddings)` | Upserts chunks with metadata (filename, page_number, chunk_index). IDs are `{filename}::{chunk_index}` |
+| `search(query_embedding, top_k)` | Cosine similarity search. Returns `SearchResult` with `score = 1 - distance` clamped to [0, 1] |
+| `get_all_chunks()` | Returns all stored chunks as dicts (used for BM25 indexing) |
+| `list_documents()` | Returns sorted list of unique filenames |
+| `get_stats()` | Returns `documents_indexed`, `total_chunks`, `chunks_per_document`, `documents` |
+| `delete_document(filename)` | Deletes all chunks for a specific document |
+| `reset()` | Drops and recreates the collection |
 
-- Recebe a pergunta em texto, gera o embedding usando o provider configurado
-- Consulta o vector store pedindo top-k resultados (k configurável, default 5)
-- Retorna lista de chunks rankeados por score de similaridade, incluindo metadata
-- Logar: tempo de geração do embedding, tempo de busca, scores dos top-k
+**Embedding model validation:** on init, checks that the collection's stored `embedding_model` metadata matches the requested model. Raises `ValueError` on mismatch to prevent dimension incompatibility.
+
+**Persistence:** directory configurable, default `/app/data/chromadb`. Uses `PersistentClient` with telemetry disabled.
+
+---
+
+### retrieval.py — Hybrid Search with RRF
+
+Combines two strategies fused via Reciprocal Rank Fusion:
+
+**1. Semantic search:** generates a query embedding → queries ChromaDB for top `search_pool=50` candidates by cosine similarity.
+
+**2. Keyword search (BM25):** in-memory BM25-Okapi index (`k1=1.5`, `b=0.75`) built from scratch. Bilingual stop-word removal (EN + PT). Tokenization via regex `[a-zA-Z0-9À-ÿ]+`, lowercased, words with length >1.
+
+**3. RRF fusion:**
+```
+score(doc) = β / (k + rank_semantic) + (1 − β) / (k + rank_keyword)
+```
+Defaults: `β=0.70` (semantic weight), `k=60` (standard RRF smoothing constant).
+
+**4. Confidence classification** (based on top cosine similarity, not RRF score):
+- `high`: > 0.80
+- `medium`: >= 0.60
+- `low`: < 0.60
+
+**5. Optional metadata filter:** restrict results to specific filenames.
+
+**Bilingual retrieval** (`retrieve_bilingual`):
+- Runs `retrieve()` for the original question
+- If a translation is available, runs `retrieve()` again for the translated question
+- Merges by chunk ID keeping the highest RRF score, re-sorts, trims to `top_k`
+
+**Data classes:**
+- `RetrievalResult(text, document, page, chunk_index, rrf_score, semantic_score, keyword_score, semantic_rank, keyword_rank)`
+- `RetrievalMetrics(embedding_time_ms, semantic_search_time_ms, keyword_search_time_ms, fusion_time_ms, total_time_ms, top_rrf_scores, confidence, semantic_pool_size, keyword_pool_size, query_language_used)`
+- `RetrievalResponse(results, metrics)`
+
+---
+
+### translation.py
+
+Translates questions between PT ↔ EN using `gpt-4o-mini` (temperature 0, max 500 tokens, 10s timeout). Returns the original question on failure (graceful degradation). Called by the `/question` endpoint to enable bilingual retrieval.
+
+---
 
 ### llm.py
 
-- Interface abstrata `LLMProvider` com método `generate(system_prompt: str, user_prompt: str) -> str`
-- Implementação `OpenAILLMProvider`: usa `gpt-4o-mini`
-- Implementação `AnthropicLLMProvider`: usa Claude Sonnet
-- Classe `LLMWithFallback`: tenta o provider primário (OpenAI), se falhar com erro 429/500/timeout, tenta o secundário (Anthropic). Loga qual provider foi usado.
-- System prompt para o LLM:
+**Providers:**
+- `OpenAILLMProvider`: async ChatCompletion API, `gpt-4o-mini`, temperature 0.1
+- `AnthropicLLMProvider`: async Messages API, `claude-sonnet-4-6`, temperature 0.1
+- `FallbackLLMProvider`: wraps primary + fallback; on `LLMError` from primary, retries with fallback and logs the switch
 
+Both providers return `tuple[str, int | None]` — raw answer text + total tokens.
+
+**Factory:** `get_llm_provider(model, openai_key, anthropic_key)` infers provider from model name prefix (`gpt` → OpenAI, `claude` → Anthropic).
+
+**Dependency injection** (`dependencies.py`): if both keys are provided → `FallbackLLMProvider(OpenAI primary, Anthropic fallback)`. If only one key → single provider. No keys → 401.
+
+**System prompt:**
 ```
-Você é um assistente que responde perguntas baseado exclusivamente nos trechos de documentos fornecidos abaixo.
+You are an assistant that answers questions based exclusively on the document excerpts provided.
 
-Regras:
-- Responda APENAS com informações presentes nos trechos fornecidos
-- Ao final da resposta, liste os números dos trechos que você utilizou
-- Se a informação não estiver nos trechos, diga explicitamente que não encontrou informação suficiente nos documentos disponíveis
-- Seja direto e preciso
-- Responda no mesmo idioma da pergunta
-
-Trechos:
-{chunks numerados com fonte e página}
-
-Pergunta: {question}
+Rules:
+- Answer ONLY with information present in the provided excerpts
+- At the end of your response, list the numbers of the excerpts you used in the format: [USED: 1, 3, 5]
+- If the information is not in the excerpts, explicitly state that you did not find sufficient information
+- Be direct and precise
+- Respond in the same language as the question
 ```
 
-- Parsear a resposta do LLM para extrair quais trechos foram referenciados e montar o array `references`
+**Citation parsing:** extracts `[USED: 1, 3, 5]` from the end of the LLM response via regex, converts 1-based indices to 0-based.
+
+**Orchestration (`answer_question`):** builds prompt → calls provider → parses citations → returns `LLMResponse(answer, referenced_chunk_indices, provider_used, model, tokens_used, latency_ms)`.
 
 ---
 
-## Frontend — Duas Telas
+## Frontend
 
-### Tela 1: Setup (SetupPage)
+### Screen 1: SetupPage
 
-**Layout:** centralizado na tela, card com formulário
+Centered card with:
+- Title "RAG PDF Q&A" + subtitle
+- Single OpenAI API key input (password field) with "Test" button
+- Visual feedback: loading indicator, green "Valid key" text, or red error message
+- "Get Started" button disabled until key is validated
+- Key stored in React state only (never persisted)
 
-**Elementos:**
-- Título: nome do projeto e breve descrição ("Sistema de Q&A sobre documentos PDF")
-- Campo de input para OpenAI API Key, com label "OpenAI API Key (obrigatória)" e ícone de cadeado
-  - Tipo password (oculta o valor)
-  - Botão "Testar" ao lado
-  - Feedback visual: spinner enquanto testa, check verde se válida, X vermelho com mensagem se inválida
-  - Abaixo do campo, texto discreto: "Usada para embeddings (text-embedding-3-small) e respostas (gpt-4o-mini)"
-- Campo de input para Anthropic API Key, com label "Anthropic API Key (opcional — fallback)"
-  - Mesmo padrão de teste e feedback
-  - Texto discreto: "Usada como fallback para respostas (Claude Sonnet)"
-- Botão "Começar" no final
-  - Desabilitado até que a OpenAI key esteja validada com sucesso
-  - Habilitado assim que a OpenAI key for validada (Anthropic é opcional)
+Note: Anthropic key input is not present in the current UI. The Anthropic key is not collected from the user. Fallback to Anthropic only works if `X-Anthropic-Key` header is provided externally.
 
-**Comportamento:**
-- As keys são armazenadas apenas no estado do React (memória do browser, não localStorage)
-- Enviadas via headers em cada request subsequente
-- Nunca persistidas no backend
+### Screen 2: MainPage
 
-### Tela 2: Principal (MainPage)
+**Left sidebar (w-72):**
+- "Change API key" link back to setup
+- File upload area: click-to-select (accepts `.pdf`, multiple files)
+- Upload progress: "Processing..." label while uploading
+- Document list: each document shows filename, page count, chunk count
 
-**Layout:** sidebar esquerda (largura fixa ~300px) + área principal à direita
+**Main area (chat):**
+- Empty states: "Upload a PDF to get started" / "Ask a question about your documents"
+- User messages: right-aligned blue bubbles
+- Assistant messages: white card with:
+  - Answer text (pre-wrap)
+  - Metadata row: confidence (color-coded green/yellow/red), model name, response time
+  - Collapsible references section with text excerpt, document name, page number, similarity percentage
+- Error messages: red-bordered cards
+- Loading state: pulse animation skeleton
+- Input form: text field + "Send" button at bottom, auto-scrolls to latest message
 
-**Sidebar esquerda:**
-- Área de upload de PDFs no topo
-  - Drag-and-drop ou clique para selecionar
-  - Aceita múltiplos arquivos
-  - Ao fazer upload, mostra progresso por etapa: "Extraindo texto... Gerando chunks... Criando embeddings... Pronto!"
-  - Após indexação, mostra resumo: "manual.pdf — 15 páginas, 72 chunks"
-- Lista de documentos indexados abaixo
-  - Cada documento com nome, número de páginas, número de chunks
-  - Indicador visual de que está indexado
-
-**Área principal (chat):**
-- Histórico de perguntas e respostas, estilo chat
-- Cada resposta do sistema contém:
-  - Texto da resposta (destaque principal)
-  - Indicador de confiança baseado no similarity score: "Alta confiança" (score > 0.8), "Média confiança" (0.6-0.8), "Baixa confiança" (< 0.6)
-  - Indicação de qual provider/modelo gerou a resposta
-  - Cards colapsáveis de referências, cada um mostrando: trecho do texto, nome do documento, número da página, score de similaridade
-  - Tempo de resposta discreto (ex: "1.3s")
-- Campo de input na parte inferior com botão de enviar
-- Loading state enquanto processa (spinner ou skeleton)
-- Se nenhum documento estiver indexado, mostrar mensagem orientando o upload
+**API key passing:** headers are built per-request from React state (`X-OpenAI-Key`, `X-Anthropic-Key`).
 
 ---
 
-## Infraestrutura
+## Complete Request Flow
 
-### .env.example (commitado no repo)
+### Document Upload
 ```
-OPENAI_API_KEY=sk-your-key-here
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-EMBEDDING_MODEL=text-embedding-3-small
-LLM_MODEL=gpt-4o-mini
-CHUNK_SIZE=512
-CHUNK_OVERLAP=50
-TOP_K=5
-LOG_LEVEL=INFO
+User drops PDF → Frontend POST /documents (multipart + X-OpenAI-Key header)
+  → extract_pdf() — PyMuPDF text extraction, language detection, header/footer removal
+  → chunk_pages() — semantic splitting with overlap
+  → embed_chunks_in_batches() — OpenAI API in batches of 100
+  → vector_store.add_documents() — upsert to ChromaDB
+  ← Response with per-file stats (pages, chunks, time, language)
 ```
 
-### Dockerfile
-- Base: `python:3.12-slim`
-- Instalar dependências de sistema para PyMuPDF em camada separada
-- Copiar `requirements.txt` primeiro, rodar `pip install` (cache de dependências)
-- Copiar frontend buildado para pasta `static/`
-- Copiar código backend
-- Criar usuário não-root para rodar a aplicação
-- Expor porta 8000
-- CMD: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+### Question Answering
+```
+User types question → Frontend POST /question (JSON + API key headers)
+  → Detect question language (PT/EN heuristic)
+  → Translate question to the other language (gpt-4o-mini)
+  → retrieve_bilingual():
+      → retrieve() on original question:
+          → Embed question → ChromaDB cosine search (top 50)
+          → BM25 keyword search over all chunks (top 50)
+          → RRF fusion → top 5
+      → retrieve() on translated question (same pipeline)
+      → Merge both result sets by chunk ID, keep best RRF scores → top 5
+  → answer_question():
+      → Build prompt with numbered excerpts + question
+      → Call LLM (OpenAI primary, Anthropic fallback)
+      → Parse [USED: ...] citations
+  → Build references from cited chunks
+  ← Response with answer, references, metadata (confidence, provider, timings, language)
+```
+
+---
+
+## Infrastructure
+
+### Dockerfile (multi-stage)
+1. **Stage 1 (frontend):** `node:20-slim` → `npm install` → `npm run build` → produces `dist/`
+2. **Stage 2 (runtime):** `python:3.12-slim` → installs curl + pip deps → copies backend + built frontend to `static/` → creates non-root `appuser` → exposes 8000 → runs uvicorn
 
 ### docker-compose.yml
-```yaml
-services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - chroma_data:/app/data
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-volumes:
-  chroma_data:
-```
-
-### Makefile
-```makefile
-setup:          copia .env.example para .env
-build-frontend: builda o React para static/
-run:            docker-compose up --build
-dev:            roda backend e frontend em modo dev
-test:           roda testes com pytest
-down:           docker-compose down
-clean:          remove volumes e dados persistidos
-```
+- Single service `api` with port 8000
+- Named volume `chroma_data` at `/app/data` for persistence
+- Healthcheck: `curl -f http://localhost:8000/health` every 30s
+- Loads `.env` file
 
 ---
 
 ## Logging
 
-- Usar `structlog` ou `logging` padrão com formato estruturado
-- Logar cada etapa do pipeline com tempo:
-  - Upload: `INFO | action=extract | file=manual.pdf | pages=15 | time_ms=450`
-  - Chunking: `INFO | action=chunk | file=manual.pdf | chunks=72 | time_ms=120`
-  - Embedding: `INFO | action=embed | chunks=72 | time_ms=800`
-  - Retrieval: `INFO | action=retrieve | question="consumo do motor" | top_score=0.92 | time_ms=45`
-  - LLM: `INFO | action=llm_call | provider=openai | model=gpt-4o-mini | tokens=580 | time_ms=1230`
-  - Total: `INFO | action=question_answered | total_ms=1320`
+Structured logging via `structlog` with `ConsoleRenderer`. Each pipeline stage logs with timing:
+
+```
+action=extract     | file=manual.pdf | pages=15 | extracted_pages=14 | language=pt
+action=chunk       | file=manual.pdf | chunks=72
+action=embed_batch | batch=1/1 | chunks=72
+action=add_documents | chunks=72 | collection=documents
+action=translate   | from=en | to=pt | original="What is..." | translated="Qual é..."
+action=retrieve    | question="..." | strategy=hybrid_rrf | beta=0.70 | ...
+action=llm_call    | provider=openai | model=gpt-4o-mini | tokens=580 | latency_ms=1230
+```
 
 ---
 
-## Testes
+## Testing
 
-- Testes unitários para:
-  - `chunking.py`: verificar que respeita fronteiras de parágrafo, que overlap funciona, que chunks pequenos são agrupados
-  - `extraction.py`: verificar extração de PDF simples, PDF com múltiplas páginas
-  - `retrieval.py`: com mocks do vector store e embedding provider
-  - Endpoints da API: com TestClient do FastAPI, mocks dos providers
-- Não testar chamadas reais a APIs externas nos testes unitários — usar mocks
+Current tests are Jupyter notebooks (not pytest):
+- `test_extraction.ipynb` — PDF extraction validation
+- `test_chunking.ipynb` — Chunking logic validation
+- `test_embedding.ipynb` — Embedding generation tests
+- `test_llm.ipynb` — LLM call tests
 
----
-
-## README.md
-
-Deve conter:
-1. **Título e descrição** breve do projeto
-2. **Diagrama de arquitetura** (Mermaid ou ASCII) mostrando o fluxo: PDF → Extração → Chunking → Embedding → ChromaDB → Retrieval → LLM → Resposta
-3. **Setup rápido** em 3 passos: clone, configure `.env`, `make run`
-4. **Exemplos de uso** com curl mostrando: upload de documento, pergunta com resposta existente, pergunta sem resposta nos documentos
-5. **Decisões técnicas** explicando a escolha de cada componente e por quê
-6. **Limitações e próximos passos**: o que faria com mais tempo (re-ranking, OCR para PDFs escaneados, cache de respostas, autenticação, rate limiting)
-
----
-
-## Fluxo Completo do Usuário
-
-1. Abre `localhost:8000` no browser
-2. Tela de setup aparece → cola OpenAI key → clica "Testar" → check verde aparece
-3. Opcionalmente cola Anthropic key → clica "Testar" → check verde
-4. Botão "Começar" fica habilitado → clica → transição para tela principal
-5. Na sidebar, arrasta 2 PDFs → vê progresso etapa por etapa → "128 chunks indexados"
-6. No chat, digita "Qual o consumo de energia do motor?"
-7. Vê loading → resposta aparece com texto, indicador de confiança alta, referências colapsáveis mostrando trecho, documento e página
-8. Continua fazendo perguntas
-9. Faz pergunta sobre algo que não está nos documentos → sistema responde que não encontrou informação suficiente
+pytest and httpx are listed in `requirements.txt` but commented out.
