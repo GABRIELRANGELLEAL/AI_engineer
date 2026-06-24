@@ -2,67 +2,45 @@ import { useState } from 'react'
 
 export default function SetupPage({ onComplete }) {
   const [key, setKey] = useState('')
-  const [status, setStatus] = useState(null) // null | 'loading' | 'valid' | 'error'
-  const [errorMsg, setErrorMsg] = useState('')
-
   const [anthropicKey, setAnthropicKey] = useState('')
-  const [anthropicStatus, setAnthropicStatus] = useState(null)
-  const [anthropicError, setAnthropicError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState({})
 
-  async function handleTest() {
+  async function handleGetStarted() {
     if (!key.trim()) return
-    setStatus('loading')
-    setErrorMsg('')
+    setLoading(true)
+    setErrors({})
+
+    const body = { openai_key: key }
+    if (anthropicKey.trim()) body.anthropic_key = anthropicKey
 
     try {
       const res = await fetch('/validate-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ openai_key: key }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
-      const result = data.openai
+      const newErrors = {}
 
-      if (result?.valid) {
-        setStatus('valid')
-      } else {
-        setStatus('error')
-        setErrorMsg(result?.message || 'Validation failed')
+      if (!data.openai?.valid) {
+        newErrors.openai = data.openai?.message || 'Invalid OpenAI key'
       }
-    } catch {
-      setStatus('error')
-      setErrorMsg('Could not connect to server')
-    }
-  }
-
-  async function handleTestAnthropic() {
-    if (!anthropicKey.trim()) return
-    setAnthropicStatus('loading')
-    setAnthropicError('')
-
-    try {
-      const res = await fetch('/validate-keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anthropic_key: anthropicKey }),
-      })
-      const data = await res.json()
-      const result = data.anthropic
-
-      if (result?.valid) {
-        setAnthropicStatus('valid')
-      } else {
-        setAnthropicStatus('error')
-        setAnthropicError(result?.message || 'Validation failed')
+      if (anthropicKey.trim() && !data.anthropic?.valid) {
+        newErrors.anthropic = data.anthropic?.message || 'Invalid Anthropic key'
       }
-    } catch {
-      setAnthropicStatus('error')
-      setAnthropicError('Could not connect to server')
-    }
-  }
 
-  function handleContinue() {
-    onComplete({ openaiKey: key, anthropicKey: anthropicKey || null })
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors)
+        setLoading(false)
+        return
+      }
+
+      onComplete({ openaiKey: key, anthropicKey: anthropicKey || null })
+    } catch {
+      setErrors({ openai: 'Could not connect to server' })
+      setLoading(false)
+    }
   }
 
   return (
@@ -75,28 +53,15 @@ export default function SetupPage({ onComplete }) {
           OpenAI API Key
         </label>
         <p className="text-xs text-gray-400 mb-3">Used for embeddings (text-embedding-3-small) and answers (gpt-4o-mini)</p>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => { setKey(e.target.value); setStatus(null) }}
-            placeholder="sk-..."
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-          <button
-            onClick={handleTest}
-            disabled={!key.trim() || status === 'loading'}
-            className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {status === 'loading' ? '...' : 'Test'}
-          </button>
-        </div>
-
-        {status === 'valid' && (
-          <p className="text-green-600 text-sm mt-2">Valid key</p>
-        )}
-        {status === 'error' && (
-          <p className="text-red-600 text-sm mt-2">{errorMsg}</p>
+        <input
+          type="password"
+          value={key}
+          onChange={(e) => { setKey(e.target.value); setErrors((prev) => ({ ...prev, openai: undefined })) }}
+          placeholder="sk-..."
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+        {errors.openai && (
+          <p className="text-red-600 text-sm mt-2">{errors.openai}</p>
         )}
 
         <div className="border-t border-gray-200 mt-6 pt-6">
@@ -104,37 +69,24 @@ export default function SetupPage({ onComplete }) {
             Anthropic API Key <span className="text-gray-400 font-normal">(opcional)</span>
           </label>
           <p className="text-xs text-gray-400 mb-3">Usado como fallback caso a OpenAI falhe</p>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={anthropicKey}
-              onChange={(e) => { setAnthropicKey(e.target.value); setAnthropicStatus(null) }}
-              placeholder="sk-ant-..."
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <button
-              onClick={handleTestAnthropic}
-              disabled={!anthropicKey.trim() || anthropicStatus === 'loading'}
-              className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {anthropicStatus === 'loading' ? '...' : 'Test'}
-            </button>
-          </div>
-
-          {anthropicStatus === 'valid' && (
-            <p className="text-green-600 text-sm mt-2">Valid key</p>
-          )}
-          {anthropicStatus === 'error' && (
-            <p className="text-red-600 text-sm mt-2">{anthropicError}</p>
+          <input
+            type="password"
+            value={anthropicKey}
+            onChange={(e) => { setAnthropicKey(e.target.value); setErrors((prev) => ({ ...prev, anthropic: undefined })) }}
+            placeholder="sk-ant-..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+          {errors.anthropic && (
+            <p className="text-red-600 text-sm mt-2">{errors.anthropic}</p>
           )}
         </div>
 
         <button
-          onClick={handleContinue}
-          disabled={status !== 'valid'}
+          onClick={handleGetStarted}
+          disabled={!key.trim() || loading}
           className="w-full mt-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
         >
-          Get Started
+          {loading ? 'Validating...' : 'Get Started'}
         </button>
       </div>
     </div>
