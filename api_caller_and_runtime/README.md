@@ -1,5 +1,4 @@
 # Agentic Loop Orchestrator
-![banner](image_readme.png)
 
 ![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?logo=fastapi&logoColor=white)
@@ -7,6 +6,9 @@
 ![OpenAI](https://img.shields.io/badge/-OpenAI-412991?logo=openai&logoColor=white)
 ![Docker](https://img.shields.io/badge/-Docker-2496ED?logo=docker&logoColor=white)
 ![SSE](https://img.shields.io/badge/-SSE%20Streaming-6366F1)
+
+
+![banner](app/image_readme.png)
 
 > **Provider-agnostic agentic loop framework** with multi-turn tool execution, session management, real-time SSE streaming, and pluggable persistence — works with Anthropic Claude and OpenAI GPT out of the box.
 
@@ -293,40 +295,3 @@ Dispatches every `LLMResponse` to the right handler based on `stop_reason`, exec
 | Container | Docker Compose |
 
 ---
-
-## 🔌 Extending
-
-### Add a new tool
-
-```python
-# tools.py
-def handle_my_tool(query: str) -> str:
-    return f"Result for: {query}"
-
-TOOLS["my_tool"] = {
-    "description": "Does something useful.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "The input query"}
-        },
-        "required": ["query"],
-    },
-    "handler": handle_my_tool,
-}
-```
-
-### Add a custom persistence backend
-
-```python
-from persistence import PersistenceBackend
-
-class JsonFilePersistence:
-    def save(self, *, session, user_prompt, final_answer, state, task_id, agent_name):
-        import json, pathlib
-        pathlib.Path(f"logs/{task_id}.json").write_text(
-            json.dumps({"prompt": user_prompt, "answer": final_answer})
-        )
-
-orchestrator = Orchestrator(provider=provider, persistence=JsonFilePersistence())
-```
