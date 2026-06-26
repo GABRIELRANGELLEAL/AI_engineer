@@ -8,7 +8,9 @@
 ![SSE](https://img.shields.io/badge/-SSE%20Streaming-6366F1)
 
 
-![banner](app/image_readme.png)
+<p align="center">
+  <img src="app/image_readme.png" alt="banner">
+</p>
 
 > **Provider-agnostic agentic loop framework** with multi-turn tool execution, session management, real-time SSE streaming, and pluggable persistence
 
@@ -21,7 +23,7 @@
 
 </div>
 
-## 🧠 How It Works
+## How It Works
 
 ```
 User Prompt
