@@ -10,7 +10,7 @@
 
 ![banner](app/image_readme.png)
 
-> **Provider-agnostic agentic loop framework** with multi-turn tool execution, session management, real-time SSE streaming, and pluggable persistence — works with Anthropic Claude and OpenAI GPT out of the box.
+> **Provider-agnostic agentic loop framework** with multi-turn tool execution, session management, real-time SSE streaming, and pluggable persistence
 
 ---
 
