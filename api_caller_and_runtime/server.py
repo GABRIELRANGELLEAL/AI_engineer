@@ -92,22 +92,7 @@ class InstrumentedResponseHandler(ResponseHandler):
             "message_count": len(result_state.output_messages),
         })
 
-        # Emit only the new messages added in this iteration
-        for msg in result_state.output_messages[old_len:]:
-            if msg.get("type") == "text":
-                self._emit("text_block", {
-                    "iteration": iteration,
-                    "content": msg.get("content", "")[:300],
-                })
-            elif msg.get("type") == "tool_result":
-                self._emit("tool_result", {
-                    "iteration": iteration,
-                    "tool_name": msg.get("tool_name", ""),
-                    "tool_use_id": msg.get("tool_use_id", ""),
-                    "content": str(msg.get("content", ""))[:300],
-                })
-
-        # Emit tool_use blocks from the raw response content
+        # First: what the LLM asked for (tool invocations)
         for block in response.content:
             if block.get("type") == "tool_use":
                 self._emit("tool_call", {
@@ -115,6 +100,21 @@ class InstrumentedResponseHandler(ResponseHandler):
                     "tool_name": block["name"],
                     "tool_use_id": block["id"],
                     "input": block.get("input", {}),
+                })
+
+        # Then: execution results and text
+        for msg in result_state.output_messages[old_len:]:
+            if msg.get("type") == "text":
+                self._emit("text_block", {
+                    "iteration": iteration,
+                    "content": msg.get("content", "")[:2000],
+                })
+            elif msg.get("type") == "tool_result":
+                self._emit("tool_result", {
+                    "iteration": iteration,
+                    "tool_name": msg.get("tool_name", ""),
+                    "tool_use_id": msg.get("tool_use_id", ""),
+                    "content": str(msg.get("content", ""))[:300],
                 })
 
         return result_state
@@ -207,7 +207,7 @@ async def start_run(req: RunRequest):
                 "run_id": run_id,
                 "stop_reason": result.stop_reason,
                 "total_tokens": result.total_tokens,
-                "final_answer": result.final_answer[:500] if result.final_answer else "",
+                "final_answer": result.final_answer[:3000] if result.final_answer else "",
             })
         except Exception as exc:
             _push(run_id, {"type": "run_error", "error": str(exc)})
