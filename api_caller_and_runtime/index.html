@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agentic Loop Visualizer</title>
+<style>
+  /* ── Tokens ─────────────────────────────────────────────── */
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #151820;
+    --border:    #252a35;
+    --muted:     #3a4054;
+
+    --user:      #5b8af5;
+    --orch:      #a78bfa;
+    --provider:  #34d399;
+    --handler:   #fb923c;
+    --tools:     #f472b6;
+
+    --text:      #e2e8f0;
+    --text-dim:  #64748b;
+    --mono:      'JetBrains Mono', 'Fira Code', monospace;
+
+    --radius:    6px;
+    --arrow-h:   48px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: .04em;
+    flex: 1;
+  }
+
+  header h1 span { color: var(--orch); }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--border);
+    color: var(--text-dim);
+    letter-spacing: .06em;
+  }
+
+  /* ── Config panel ────────────────────────────────────────── */
+  .config {
+    display: flex;
+    gap: 8px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 10px; color: var(--text-dim); letter-spacing: .06em; }
+
+  input, select, textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--orch);
+  }
+
+  input[type="password"] { width: 240px; }
+  select { width: 160px; }
+  .msg-input { width: 320px; }
+
+  textarea {
+    width: 320px;
+    height: 60px;
+    resize: vertical;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn {
+    padding: 6px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--bg);
+    color: var(--text);
+    transition: all .15s;
+    white-space: nowrap;
+  }
+
+  .btn:hover { border-color: var(--orch); color: var(--orch); }
+
+  .btn-primary {
+    background: var(--orch);
+    border-color: var(--orch);
+    color: #0d0f14;
+    font-weight: 700;
+  }
+
+  .btn-primary:hover { opacity: .85; color: #0d0f14; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+  /* ── Main layout ─────────────────────────────────────────── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Sequence diagram ────────────────────────────────────── */
+  .diagram-wrap {
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* Actors row */
+  .actors {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    margin-bottom: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding-bottom: 8px;
+  }
+
+  .actor {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .actor-box {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-align: center;
+    width: 100%;
+    max-width: 130px;
+  }
+
+  .actor-line {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+  }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; }
+
+  .step {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    min-height: var(--arrow-h);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .3s ease, transform .3s ease;
+    position: relative;
+  }
+
+  .step.visible { opacity: 1; transform: translateY(0); }
+
+  /* Lifelines inside each step row */
+  .step .cell {
+    border-right: 1px dashed var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 6px 0;
+  }
+
+  .step .cell:last-child { border-right: none; }
+
+  /* Arrow overlay — absolute, full width of step */
+  .step .arrow-layer {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  .step .arrow-layer svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* Label pill on the arrow */
+  .arrow-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* Note strip below each step */
+  .step-note {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* Iteration divider */
+  .iter-divider {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0 4px;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: .06em;
+  }
+
+  .iter-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────────── */
+  .sidebar {
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-section h2 {
+    font-size: 10px;
+    letter-spacing: .1em;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* LoopState fields */
+  .state-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .state-field {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    transition: border-color .3s, background .3s;
+  }
+
+  .state-field.flash {
+    border-color: var(--orch);
+    background: #1e1a2e;
+  }
+
+  .state-field .key {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+
+  .state-field .val {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* Event log */
+  .event-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .log-entry {
+    font-size: 10px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border-left: 2px solid var(--border);
+    background: var(--bg);
+    line-height: 1.5;
+    animation: slideIn .2s ease;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(6px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .log-entry .log-type {
+    font-size: 9px;
+    letter-spacing: .06em;
+    margin-bottom: 2px;
+    opacity: .6;
+  }
+
+  .log-entry.run_start    { border-color: var(--orch); }
+  .log-entry.run_end      { border-color: var(--provider); }
+  .log-entry.run_error    { border-color: #f87171; }
+  .log-entry.turn_start   { border-color: var(--user); }
+  .log-entry.tool_call    { border-color: var(--tools); }
+  .log-entry.tool_result  { border-color: var(--handler); }
+  .log-entry.loop_state   { border-color: var(--orch); }
+
+  /* ── Status bar ──────────────────────────────────────────── */
+  .statusbar {
+    padding: 6px 24px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--surface);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background .3s;
+  }
+
+  .status-dot.running { background: var(--provider); animation: pulse 1s infinite; }
+  .status-dot.done    { background: var(--provider); }
+  .status-dot.error   { background: #f87171; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .3; }
+  }
+
+  /* ── Empty state ─────────────────────────────────────────── */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .empty svg { opacity: .2; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<header>
+  <h1>Agentic Loop <span>Visualizer</span></h1>
+  <span class="badge">SSE · live</span>
+</header>
+
+<!-- ── Config ──────────────────────────────────────────────── -->
+<div class="config">
+  <div class="field">
+    <label id="apiKeyLabel">API KEY</label>
+    <input type="password" id="apiKey" placeholder="Select a model first" disabled />
+  </div>
+  <div class="field">
+    <label>MODEL</label>
+    <select id="model" onchange="onModelChange()">
+      <option value="" disabled selected>Select a model…</option>
+      <optgroup label="Anthropic">
+        <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
+        <option value="claude-opus-4-8">claude-opus-4-8</option>
+      </optgroup>
+      <optgroup label="OpenAI">
+        <option value="gpt-4o">gpt-4o</option>
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gpt-4-turbo">gpt-4-turbo</option>
+      </optgroup>
+    </select>
+  </div>
+  <div class="field">
+    <label>MESSAGE</label>
+    <input class="msg-input" type="text" id="message"
+           value="List the files in the workspace and show me one of them." />
+  </div>
+  <div class="field">
+    <label>SYSTEM PROMPT (optional)</label>
+    <textarea id="systemPrompt" placeholder="You are a helpful assistant..."></textarea>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="btn btn-primary" id="runBtn" onclick="startRun()">▶ Run</button>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="btn" id="resetBtn" onclick="resetAll()">↺ Reset</button>
+  </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- Sequence diagram -->
+  <div class="diagram-wrap" id="diagramWrap">
+    <div class="actors" id="actors"></div>
+    <div class="steps"  id="steps"></div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h2>LOOP STATE</h2>
+      <div class="state-grid">
+        <div class="state-field" id="sf-iteration">
+          <div class="key">ITERATION</div>
+          <div class="val" id="sv-iteration">—</div>
+        </div>
+        <div class="state-field" id="sf-stop">
+          <div class="key">STOP REASON</div>
+          <div class="val" id="sv-stop">—</div>
+        </div>
+        <div class="state-field" id="sf-tokens">
+          <div class="key">TOTAL TOKENS</div>
+          <div class="val" id="sv-tokens">0</div>
+        </div>
+        <div class="state-field" id="sf-msgs">
+          <div class="key">MESSAGES</div>
+          <div class="val" id="sv-msgs">0</div>
+        </div>
+        <div class="state-field" id="sf-latency" style="grid-column:1/-1">
+          <div class="key">LAST LATENCY</div>
+          <div class="val" id="sv-latency">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+      <h2>EVENT LOG</h2>
+      <div class="event-log" id="eventLog"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Status bar ───────────────────────────────────────────── -->
+<div class="statusbar">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="statusText">Idle — enter a message and click Run</span>
+</div>
+
+<script>
+// ── Actor definitions ───────────────────────────────────────
+const ACTORS = [
+  { id: 'user',     label: 'User',            color: 'var(--user)' },
+  { id: 'orch',     label: 'Orchestrator',    color: 'var(--orch)' },
+  { id: 'provider', label: 'LLM Provider',    color: 'var(--provider)' },
+  { id: 'handler',  label: 'ResponseHandler', color: 'var(--handler)' },
+  { id: 'tools',    label: 'Tools',           color: 'var(--tools)' },
+];
+
+// ── Map event types to sequence steps ──────────────────────
+const IDX = Object.fromEntries(ACTORS.map((a, i) => [a.id, i]));
+
+function eventToSteps(evt) {
+  switch (evt.type) {
+    case 'run_start':
+      return [{
+        from: 'user', to: 'orch',
+        label: `run() — "${(evt.run_id || '').slice(0, 8)}…"`,
+        note: 'Orchestrator.run() called',
+        color: 'var(--user)',
+      }];
+
+    case 'turn_start':
+      return [
+        {
+          from: 'orch', to: 'provider',
+          label: `one_call() · turn ${evt.iteration}`,
+          note: `Provider sends request → ${evt.model}`,
+          color: 'var(--orch)',
+          divider: evt.iteration > 1 ? `Turn ${evt.iteration}` : null,
+        },
+        {
+          from: 'provider', to: 'orch',
+          label: `LLMResponse · ${evt.stop_reason} · ${evt.latency_ms}ms`,
+          note: `stop_reason=${evt.stop_reason} | tokens=${evt.tokens}`,
+          color: 'var(--provider)',
+        },
+        {
+          from: 'orch', to: 'handler',
+          label: 'process_response()',
+          note: 'ResponseHandler dispatches by stop_reason',
+          color: 'var(--orch)',
+        },
+      ];
+
+    case 'tool_call':
+      return [{
+        from: 'handler', to: 'tools',
+        label: `execute_tool("${evt.tool_name}")`,
+        note: `Tool input: ${JSON.stringify(evt.input).slice(0, 60)}`,
+        color: 'var(--tools)',
+      }];
+
+    case 'tool_result':
+      return [{
+        from: 'tools', to: 'handler',
+        label: `result · "${String(evt.content).slice(0, 30)}…"`,
+        note: `tool_use_id: ${evt.tool_use_id.slice(0, 16)}…`,
+        color: 'var(--handler)',
+        returnArrow: true,
+      }];
+
+    case 'text_block':
+      return [{
+        from: 'handler', to: 'orch',
+        label: `text → "${evt.content.slice(0, 40)}…"`,
+        note: 'Text block added to output_messages',
+        color: 'var(--handler)',
+        returnArrow: true,
+      }];
+
+    case 'run_end':
+      return [{
+        from: 'orch', to: 'user',
+        label: `RunResult · ${evt.stop_reason}`,
+        note: `Total tokens: ${evt.total_tokens}`,
+        color: 'var(--provider)',
+        returnArrow: true,
+      }];
+
+    default:
+      return [];
+  }
+}
+
+// ── Render actors ───────────────────────────────────────────
+function renderActors() {
+  const el = document.getElementById('actors');
+  el.innerHTML = ACTORS.map(a => `
+    <div class="actor">
+      <div class="actor-box" style="border-color:${a.color};color:${a.color}">${a.label}</div>
+      <div class="actor-line" style="background:${a.color};opacity:.3"></div>
+    </div>
+  `).join('');
+}
+
+// ── Render a single sequence step ──────────────────────────
+let stepCount = 0;
+
+function renderStep(step) {
+  const stepsEl = document.getElementById('steps');
+
+  // Divider for new turns
+  if (step.divider) {
+    const div = document.createElement('div');
+    div.className = 'iter-divider';
+    div.style.gridColumn = '1 / -1';
+    div.textContent = `── ${step.divider}`;
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = 'repeat(5,1fr)';
+    wrapper.appendChild(div);
+    stepsEl.appendChild(wrapper);
+  }
+
+  const fromIdx = IDX[step.from];
+  const toIdx   = IDX[step.to];
+  const goRight = toIdx >= fromIdx;
+
+  const row = document.createElement('div');
+  row.className = 'step';
+  row.id = `step-${stepCount++}`;
+
+  // 5 cells for lifelines
+  for (let i = 0; i < 5; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    row.appendChild(cell);
+  }
+
+  stepsEl.appendChild(row);
+
+  // SVG arrow overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'arrow-layer';
+  overlay.innerHTML = buildArrowSVG(fromIdx, toIdx, step.color, step.returnArrow);
+  row.appendChild(overlay);
+
+  // Label pill
+  const pill = document.createElement('div');
+  pill.className = 'arrow-label';
+  pill.style.color = step.color;
+  pill.style.borderColor = step.color + '44';
+
+  // Position pill horizontally between from and to
+  const minI = Math.min(fromIdx, toIdx);
+  const maxI = Math.max(fromIdx, toIdx);
+  const leftPct  = (minI / 5) * 100 + 2;
+  const rightPct = ((5 - maxI) / 5) * 100 + 2;
+  pill.style.left  = leftPct + '%';
+  pill.style.right = rightPct + '%';
+  pill.style.maxWidth = 'none';
+  pill.textContent = step.label;
+  row.appendChild(pill);
+
+  // Note
+  if (step.note) {
+    const note = document.createElement('div');
+    note.className = 'step-note';
+    note.textContent = step.note;
+    row.appendChild(note);
+  }
+
+  // Animate in
+  requestAnimationFrame(() => {
+    row.classList.add('visible');
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+}
+
+function buildArrowSVG(fromIdx, toIdx, color, returnArrow) {
+  // We use percentage positions for the actor centers
+  const pct = i => ((i + 0.5) / 5) * 100;
+  const x1 = pct(fromIdx);
+  const x2 = pct(toIdx);
+  const y  = 50; // vertical center %
+
+  const isSelf = fromIdx === toIdx;
+  const isLeft = toIdx < fromIdx;
+
+  let path = '';
+  let arrowHead = '';
+
+  if (isSelf) {
+    // Self-loop: small arc
+    path = `M ${x1}% ${y - 20}% Q ${x1 + 8}% ${y - 20}% ${x1 + 8}% ${y}% Q ${x1 + 8}% ${y + 20}% ${x1}% ${y + 20}%`;
+    arrowHead = `▸`;
+  } else {
+    path = `M ${x1}% ${y}% L ${x2}% ${y}%`;
+  }
+
+  const dash = returnArrow ? '4,3' : 'none';
+
+  return `
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah-${fromIdx}-${toIdx}" markerWidth="6" markerHeight="6"
+                refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="${color}" />
+        </marker>
+      </defs>
+      <line
+        x1="${x1}%" y1="${y}%"
+        x2="${x2}%" y2="${y}%"
+        stroke="${color}"
+        stroke-width=".8"
+        stroke-dasharray="${dash}"
+        marker-end="url(#ah-${fromIdx}-${toIdx})"
+      />
+    </svg>`;
+}
+
+// ── State panel ─────────────────────────────────────────────
+function flashField(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 600);
+}
+
+function updateState(evt) {
+  if (evt.iteration !== undefined) {
+    document.getElementById('sv-iteration').textContent = evt.iteration;
+    flashField('sf-iteration');
+  }
+  if (evt.stop_reason !== undefined) {
+    document.getElementById('sv-stop').textContent = evt.stop_reason;
+    flashField('sf-stop');
+  }
+  if (evt.total_tokens !== undefined) {
+    document.getElementById('sv-tokens').textContent = evt.total_tokens.toLocaleString();
+    flashField('sf-tokens');
+  }
+  if (evt.message_count !== undefined) {
+    document.getElementById('sv-msgs').textContent = evt.message_count;
+    flashField('sf-msgs');
+  }
+  if (evt.latency_ms !== undefined) {
+    document.getElementById('sv-latency').textContent = evt.latency_ms + ' ms';
+    flashField('sf-latency');
+  }
+}
+
+// ── Event log ───────────────────────────────────────────────
+function logEvent(evt) {
+  const log = document.getElementById('eventLog');
+
+  const descriptions = {
+    run_start:   `Starting run with model ${evt.model}`,
+    turn_start:  `Turn ${evt.iteration} — stop=${evt.stop_reason}, ${evt.tokens} tokens, ${evt.latency_ms}ms`,
+    tool_call:   `Calling tool: ${evt.tool_name}`,
+    tool_result: `Tool result from ${evt.tool_name}: "${String(evt.content || '').slice(0, 60)}"`,
+    text_block:  `Text: "${(evt.content || '').slice(0, 80)}"`,
+    loop_state:  `State updated — iter=${evt.iteration}, tokens=${evt.total_tokens}`,
+    run_end:     `Run complete — ${evt.stop_reason}, ${evt.total_tokens} tokens`,
+    run_error:   `Error: ${evt.error}`,
+  };
+
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${evt.type}`;
+  entry.innerHTML = `<div class="log-type">${evt.type.toUpperCase()}</div>${descriptions[evt.type] || JSON.stringify(evt)}`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Status bar ──────────────────────────────────────────────
+function setStatus(state, text) {
+  const dot  = document.getElementById('statusDot');
+  const span = document.getElementById('statusText');
+  dot.className  = `status-dot ${state}`;
+  span.textContent = text;
+}
+
+// ── Main: start run ─────────────────────────────────────────
+let _sse = null;
+
+async function startRun() {
+  const apiKey  = document.getElementById('apiKey').value.trim();
+  const model   = document.getElementById('model').value;
+  const message = document.getElementById('message').value.trim();
+  const system  = document.getElementById('systemPrompt').value.trim();
+
+  if (!model) { alert('Select a model first.'); return; }
+  if (!message) { alert('Enter a message first.'); return; }
+
+  resetAll(false);
+  document.getElementById('runBtn').disabled = true;
+  setStatus('running', 'Starting run…');
+
+  const isOpenAI = model.startsWith('gpt');
+  const body = {
+    message,
+    model,
+    system_prompt: system || null,
+    ...(apiKey ? (isOpenAI ? { openai_api_key: apiKey } : { anthropic_api_key: apiKey }) : {}),
+  };
+
+  let runId;
+  try {
+    const res = await fetch('/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    runId = data.run_id;
+    setStatus('running', `Run ${runId.slice(0, 8)}… in progress`);
+  } catch (e) {
+    setStatus('error', `Error: ${e.message}`);
+    document.getElementById('runBtn').disabled = false;
+    return;
+  }
+
+  // Subscribe to SSE stream
+  _sse = new EventSource(`/run/${runId}/events`);
+
+  _sse.onmessage = (e) => {
+    const evt = JSON.parse(e.data);
+
+    if (evt.type === 'stream_end') {
+      _sse.close();
+      document.getElementById('runBtn').disabled = false;
+      setStatus('done', 'Run complete');
+      return;
+    }
+
+    if (evt.type === 'run_error') {
+      logEvent(evt);
+      setStatus('error', `Error: ${evt.error}`);
+      _sse.close();
+      document.getElementById('runBtn').disabled = false;
+      return;
+    }
+
+    // Update sidebar state
+    updateState(evt);
+
+    // Log the event
+    logEvent(evt);
+
+    // Render sequence steps (with small delay between each for visual effect)
+    const steps = eventToSteps(evt);
+    steps.forEach((step, i) => {
+      setTimeout(() => renderStep(step), i * 220);
+    });
+  };
+
+  _sse.onerror = () => {
+    setStatus('error', 'SSE connection lost');
+    _sse.close();
+    document.getElementById('runBtn').disabled = false;
+  };
+}
+
+function resetAll(re = true) {
+  if (_sse) { _sse.close(); _sse = null; }
+  document.getElementById('steps').innerHTML = '';
+  document.getElementById('eventLog').innerHTML = '';
+  stepCount = 0;
+
+  ['iteration','stop','tokens','msgs','latency'].forEach(k => {
+    const v = document.getElementById(`sv-${k}`);
+    if (v) v.textContent = k === 'tokens' || k === 'msgs' ? '0' : '—';
+  });
+
+  setStatus('', re ? 'Idle — enter a message and click Run' : '');
+  if (re) document.getElementById('runBtn').disabled = false;
+}
+
+// ── Model change ────────────────────────────────────────────
+function onModelChange() {
+  const model = document.getElementById('model').value;
+  const label = document.getElementById('apiKeyLabel');
+  const input = document.getElementById('apiKey');
+  if (!model) {
+    label.textContent = 'API KEY';
+    input.placeholder = 'Select a model first';
+    input.disabled = true;
+    return;
+  }
+  input.disabled = false;
+  if (model.startsWith('gpt')) {
+    label.textContent = 'OPENAI API KEY';
+    input.placeholder = 'sk-…';
+  } else {
+    label.textContent = 'ANTHROPIC API KEY';
+    input.placeholder = 'sk-ant-…';
+  }
+}
+
+// ── Init ────────────────────────────────────────────────────
+renderActors();
+onModelChange();
+</script>
+</body>
+</html>

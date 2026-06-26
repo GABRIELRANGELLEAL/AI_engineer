@@ -1,0 +1,5 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+anthropic>=0.28.0
+openai>=1.30.0
+# sqlalchemy>=2.0.0  # opcional: só necessário se usar DATABASE_URL para persistência
